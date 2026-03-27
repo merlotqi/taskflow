@@ -2,36 +2,45 @@ name: C++ CI (Lint & Build)
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [main, develop]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-tidy cmake ninja-build nlohmann-json3-dev
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-tidy cmake ninja-build nlohmann-json3-dev
 
-    - name: Configure CMake
-      run: |
-        cmake -B build \
-          -G Ninja \
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-          -DCMAKE_BUILD_TYPE=Debug
+      - name: Configure CMake
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DTASKFLOW_BUILD_EXAMPLES=ON
 
-    - name: Run Clang-Tidy
-      run: |
-        run-clang-tidy -p build/ -header-filter='include/.*'
+      - name: Run clang-tidy
+        run: |
+          run-clang-tidy -p build/ -header-filter='include/taskflow/.*'
 
-    - name: Build Project
-      run: cmake --build build
+      - name: Build
+        run: cmake --build build
 
-    - name: Run Tests
-      working-directory: build
-      run: ctest --output-on-failure
+      - name: CTest (examples + any registered tests)
+        working-directory: build
+        run: ctest --output-on-failure

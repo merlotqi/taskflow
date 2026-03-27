@@ -34,24 +34,8 @@ target_link_libraries(TaskFlow INTERFACE
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     option(TASKFLOW_BUILD_EXAMPLES "Build example applications" ON)
     if(TASKFLOW_BUILD_EXAMPLES)
-        # Build individual example executables
-        add_executable(basic_task_submission examples/basic_task_submission.cpp)
-        target_link_libraries(basic_task_submission PRIVATE TaskFlow::TaskFlow)
-
-        add_executable(multiple_tasks examples/multiple_tasks.cpp)
-        target_link_libraries(multiple_tasks PRIVATE TaskFlow::TaskFlow)
-
-        add_executable(task_with_failure examples/task_with_failure.cpp)
-        target_link_libraries(task_with_failure PRIVATE TaskFlow::TaskFlow)
-
-        add_executable(task_with_progress examples/task_with_progress.cpp)
-        target_link_libraries(task_with_progress PRIVATE TaskFlow::TaskFlow)
-
-        add_executable(task_with_result examples/task_with_result.cpp)
-        target_link_libraries(task_with_result PRIVATE TaskFlow::TaskFlow)
-
-        add_executable(persistent_task examples/persistent_task.cpp)
-        target_link_libraries(persistent_task PRIVATE TaskFlow::TaskFlow)
+        include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowExamples.cmake")
+        taskflow_register_examples(TaskFlow::TaskFlow)
     endif()
 endif()
 

@@ -112,6 +112,8 @@ examples/             # Example programs
 
 ## 🏗 Building and Testing
 
+Design documentation: [docs/README.md](docs/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ### Build Process
 
 ```bash
@@ -147,14 +149,24 @@ After building, you can run individual examples:
 
 ### Testing
 
-Currently, TaskFlow uses example programs for testing. Each example demonstrates specific functionality:
+Examples are registered as CTest tests (`taskflow_example_*`). From the build directory:
 
-- `basic_task_submission`: Basic task submission and execution
-- `multiple_tasks`: Concurrent task execution
-- `task_with_failure`: Error handling
-- `task_with_progress`: Progress reporting
-- `task_with_result`: Result storage
-- `persistent_task`: Persistent task reawakening
+```bash
+ctest --output-on-failure
+# or
+cmake --build build --target taskflow_run_examples
+```
+
+See [examples/README.md](examples/README.md) for the full executable list.
+
+### Continuous integration
+
+GitHub Actions workflows (`.github/workflows/`):
+
+- **ci.yaml** — Ubuntu, Clang, Debug, `clang-tidy` on `include/taskflow/`, build, CTest.
+- **cmake-multi-platform.yaml** — Ubuntu (GCC and Clang) and macOS (Clang), Release, build, CTest; `clang-tidy` on Ubuntu Clang only.
+
+Pull requests and pushes to `main` / `develop` run these workflows; you can also trigger them manually via **workflow_dispatch**.
 
 ## 📝 Submitting Changes
 

@@ -22,6 +22,8 @@
 3. **StateStorage**: Internal storage for task states, progress, and errors
 4. **Thread Pool**: Manages worker threads for task execution
 
+Longer design notes, lifecycle, and threading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/README.md](docs/README.md).
+
 ---
 
 ## 💻 Quick Start
@@ -163,16 +165,22 @@ if (manager.is_persistent_task(persistent_id)) {
 
 ## 🔧 Task Traits Configuration
 
-You can customize task behavior by specializing the `task_traits` template:
+Execution and dispatch use `task_traits<TaskType>`. The primary template reads optional capability fields from your task type when present:
+
+- `static constexpr taskflow::TaskObservability observability` — defaults to `basic` if omitted
+- `static constexpr bool cancellable` — defaults to `false` if omitted
+
+You can still **fully specialize** `task_traits<MyTask>` to override name, description, priority, and capabilities in one place.
 
 ```cpp
-// Example: Define a custom task type with specific traits
+// Callable type with type-level traits (picked up by default task_traits<T>)
 struct MyProgressTask {
     static constexpr taskflow::TaskObservability observability = taskflow::TaskObservability::progress;
     static constexpr bool cancellable = true;
+
+    void operator()(taskflow::TaskCtx& ctx) const { ctx.success(); }
 };
 
-// Use the custom task
 MyProgressTask my_task;
 auto task_id = manager.submit_task(my_task);
 ```
@@ -180,11 +188,11 @@ auto task_id = manager.submit_task(my_task);
 ### Available Task Capabilities
 
 - **Observability Levels**:
-  - `TaskObservability::none`: No observation capabilities
-  - `TaskObservability::basic`: Basic state observation (start/end only)
-  - `TaskObservability::progress`: Full observation with progress reporting
+  - `TaskObservability::none`: Dispatch may match the same path as other tasks; task state in `StateStorage` is still updated for typical executions (use `task_traits` / execution path for exact behavior).
+  - `TaskObservability::basic`: Basic state observation (start/end)
+  - `TaskObservability::progress`: Progress reporting via `TaskCtx::report_progress`
 
-- **Cancellation**: Set `cancellable = true` to enable cancellation support
+- **Cancellation**: Set `cancellable = true` so the runtime uses the cancellable execution path; if the task returns without setting a terminal state and cancellation was requested, the task is marked failed with message `"cancelled"`.
 
 - **Lifecycle**: Choose between `TaskLifecycle::disposable` and `TaskLifecycle::persistent`
 
@@ -197,6 +205,9 @@ The TaskManager automatically manages cleanup of completed tasks:
 * **Cleanup Interval**: Runs every 30 minutes by default
 * **Max Task Age**: Tasks older than 24 hours are automatically cleaned up
 * **Thread Count**: Specify number of worker threads when calling `start_processing()`
+* **What cleanup removes**: For each expired task id, `cleanup_completed_tasks` drops state/progress/error/locator rows, removes the associated entry from result storage (when a locator was present), clears cancellation flags, and removes persistent task handles so maps stay consistent.
+
+**Manual regression checks** (after changing execution or storage): configure and build with examples enabled (`cmake -S . -B build -DTASKFLOW_BUILD_EXAMPLES=ON`), then run `cmake --build build --target taskflow_run_examples` (runs all examples via CTest), or spot-check `./build/persistent_task` and `./build/task_with_result`. See [examples/README.md](examples/README.md).
 
 ## 🛠 Dependencies
 

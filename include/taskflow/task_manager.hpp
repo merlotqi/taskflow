@@ -49,13 +49,25 @@ class TaskManager {
 
     // Submit to thread pool for execution
     if (thread_pool_) {
-      thread_pool_->execute([this, id, task = std::move(task), lifecycle]() mutable {
-        AnyTask any_task = make_any_task(id, std::move(task), lifecycle);
-        if (any_task.valid()) {
-          TaskRuntimeCtx rctx{id, &states_, [this](TaskID tid) { return is_task_cancelled(tid); }};
-          any_task.execute_task(rctx, result_storage_.get());
-        }
-      });
+      if (lifecycle == TaskLifecycle::persistent) {
+        // Run the task body stored in persistent_tasks_; do not rebuild from a moved-from parameter.
+        thread_pool_->execute([this, id]() {
+          std::shared_lock lock(persistent_tasks_mutex_);
+          auto it = persistent_tasks_.find(id);
+          if (it != persistent_tasks_.end() && it->second && it->second->valid()) {
+            TaskRuntimeCtx rctx{id, &states_, [this](TaskID tid) { return is_task_cancelled(tid); }};
+            it->second->execute_task(rctx, result_storage_.get());
+          }
+        });
+      } else {
+        thread_pool_->execute([this, id, task = std::move(task)]() mutable {
+          AnyTask any_task = make_any_task(id, std::move(task), TaskLifecycle::disposable);
+          if (any_task.valid()) {
+            TaskRuntimeCtx rctx{id, &states_, [this](TaskID tid) { return is_task_cancelled(tid); }};
+            any_task.execute_task(rctx, result_storage_.get());
+          }
+        });
+      }
     }
 
     return id;
@@ -79,9 +91,9 @@ class TaskManager {
     // Submit for re-execution
     if (thread_pool_) {
       thread_pool_->execute([this, id]() {
-        std::unique_lock lock(persistent_tasks_mutex_);
+        std::shared_lock lock(persistent_tasks_mutex_);
         auto it = persistent_tasks_.find(id);
-        if (it != persistent_tasks_.end() && it->second->valid()) {
+        if (it != persistent_tasks_.end() && it->second && it->second->valid()) {
           TaskRuntimeCtx rctx{id, &states_, [this](TaskID tid) { return is_task_cancelled(tid); }};
           it->second->execute_task(rctx, result_storage_.get());
         }
@@ -143,7 +155,20 @@ class TaskManager {
 
   // Cleanup completed tasks
   void cleanup_completed_tasks(std::chrono::hours max_age = std::chrono::hours(24)) {
-    states_.cleanup_old_tasks(max_age);
+    auto removed = states_.cleanup_old_tasks(max_age);
+    for (const auto& [task_id, locator_opt] : removed) {
+      if (locator_opt && locator_opt->valid()) {
+        result_storage_->remove_result(*locator_opt);
+      }
+      {
+        std::unique_lock lock(cancellation_mutex_);
+        cancelled_tasks_.erase(task_id);
+      }
+      {
+        std::unique_lock lock(persistent_tasks_mutex_);
+        persistent_tasks_.erase(task_id);
+      }
+    }
   }
 
   // Start task processing (typically called once)
@@ -161,7 +186,8 @@ class TaskManager {
   }
 
  private:
-  TaskManager() : cleanup_thread_([this] { cleanup_loop(); }), result_storage_(std::make_unique<SimpleResultStorage>()) {}
+  TaskManager()
+      : cleanup_thread_([this] { cleanup_loop(); }), result_storage_(std::make_unique<SimpleResultStorage>()) {}
 
   TaskID generate_task_id() {
     static std::atomic<TaskID> next_id{1};
@@ -208,9 +234,12 @@ class TaskManager {
   std::atomic<bool> stop_cleanup_{false};
 };
 
-// Execution algorithm - State machine for task lifecycle
+// --- Internal execution (included in header for template instantiation) ---
+
+// Default path: begin, run task, then success or failure (including implicit cancelled handling).
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, void>::type execute_task(Task& task, TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
+typename std::enable_if<is_task_v<Task>, void>::type execute_task(Task& task, TaskRuntimeCtx& rctx,
+                                                                  ResultStorage* result_storage) {
   TaskCtx ctx{rctx.id, rctx.states, result_storage, rctx.cancellation_checker};
 
   try {
@@ -220,9 +249,12 @@ typename std::enable_if<is_task_v<Task>, void>::type execute_task(Task& task, Ta
     // Execute the task
     task(ctx);
 
-    // If not cancelled and not failed, mark as success
-    if (!ctx.is_cancelled() && !ctx.is_completed()) {
-      ctx.success();
+    if (!ctx.is_completed()) {
+      if (ctx.is_cancelled()) {
+        ctx.failure("cancelled");
+      } else {
+        ctx.success();
+      }
     }
   } catch (const std::exception& e) {
     // Handle exceptions
@@ -233,10 +265,10 @@ typename std::enable_if<is_task_v<Task>, void>::type execute_task(Task& task, Ta
   }
 }
 
-// Execute task with cancellation support
+// Used when task_traits say cancellable; same terminal-state rules, different dispatch branch.
 template <typename Task>
-typename std::enable_if<is_cancellable_task_v<Task>, void>::type execute_cancellable_task(Task& task,
-                                                                                          TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
+typename std::enable_if<is_cancellable_task_v<Task>, void>::type execute_cancellable_task(
+    Task& task, TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
   TaskCtx ctx{rctx.id, rctx.states, result_storage, rctx.cancellation_checker};
 
   try {
@@ -247,7 +279,11 @@ typename std::enable_if<is_cancellable_task_v<Task>, void>::type execute_cancell
 
     // Task completed normally or handled cancellation internally
     if (!ctx.is_completed()) {
-      ctx.success();
+      if (ctx.is_cancelled()) {
+        ctx.failure("cancelled");
+      } else {
+        ctx.success();
+      }
     }
   } catch (const std::exception& e) {
     ctx.failure(e.what());
@@ -256,10 +292,11 @@ typename std::enable_if<is_cancellable_task_v<Task>, void>::type execute_cancell
   }
 }
 
-// Execute task with observation
+// Used for progress-level observability combined with cancellable in the constexpr dispatch table.
 template <typename Task>
 typename std::enable_if<is_observable_task_v<Task>, void>::type execute_observable_task(Task& task,
-                                                                                        TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
+                                                                                        TaskRuntimeCtx& rctx,
+                                                                                        ResultStorage* result_storage) {
   TaskCtx ctx{rctx.id, rctx.states, result_storage, rctx.cancellation_checker};
 
   try {
@@ -267,8 +304,12 @@ typename std::enable_if<is_observable_task_v<Task>, void>::type execute_observab
 
     task(ctx);
 
-    if (!ctx.is_cancelled() && !ctx.is_completed()) {
-      ctx.success();
+    if (!ctx.is_completed()) {
+      if (ctx.is_cancelled()) {
+        ctx.failure("cancelled");
+      } else {
+        ctx.success();
+      }
     }
   } catch (const std::exception& e) {
     ctx.failure(e.what());
@@ -277,9 +318,10 @@ typename std::enable_if<is_observable_task_v<Task>, void>::type execute_observab
   }
 }
 
-// Generic task execution dispatcher
+// Picks execute_task / execute_cancellable_task / execute_observable_task from task_traits<T>.
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, void>::type execute(Task& task, TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
+typename std::enable_if<is_task_v<Task>, void>::type execute(Task& task, TaskRuntimeCtx& rctx,
+                                                             ResultStorage* result_storage) {
   if constexpr (is_cancellable_task_v<Task> && is_progress_observable_task_v<Task>) {
     execute_observable_task(task, rctx, result_storage);
   } else if constexpr (is_cancellable_task_v<Task> && is_basic_observable_task_v<Task>) {
@@ -297,7 +339,8 @@ typename std::enable_if<is_task_v<Task>, void>::type execute(Task& task, TaskRun
 
 // Execute task by value (for rvalue tasks)
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, void>::type execute(Task&& task, TaskRuntimeCtx& rctx, ResultStorage* result_storage) {
+typename std::enable_if<is_task_v<Task>, void>::type execute(Task&& task, TaskRuntimeCtx& rctx,
+                                                             ResultStorage* result_storage) {
   Task task_copy = std::forward<Task>(task);
   execute(task_copy, rctx, result_storage);
 }

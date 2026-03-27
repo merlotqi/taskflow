@@ -1,17 +1,17 @@
 #include <iostream>
 #include <taskflow/task_manager.hpp>
 
+#include "example_util.hpp"
+
 int main() {
-  std::cout << "TaskFlow Example: Task with Progress" << std::endl;
+  using namespace taskflow::examples;
 
-  // Get the task manager instance
+  print_banner("Task with Progress");
+
   auto& manager = taskflow::TaskManager::getInstance();
-
-  // Start processing with 4 threads
   manager.start_processing(4);
 
-  // Task with progress
-  auto progress_task = [] (taskflow::TaskCtx& ctx) {
+  auto progress_task = [](taskflow::TaskCtx& ctx) {
     for (int i = 0; i <= 100; i += 25) {
       ctx.report_progress(static_cast<float>(i) / 100.0f, "Processing step " + std::to_string(i));
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -22,7 +22,6 @@ int main() {
   auto progress_id = manager.submit_task(progress_task);
   std::cout << "Submitted progress task: " << progress_id << std::endl;
 
-  // Monitor progress
   while (true) {
     auto state = manager.query_state(progress_id);
     if (state && *state != taskflow::TaskState::running && *state != taskflow::TaskState::created) {
@@ -35,9 +34,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  // Stop processing
   manager.stop_processing();
-
   std::cout << "Example completed!" << std::endl;
   return 0;
 }

@@ -241,7 +241,33 @@ class SimpleResultStorage : public ResultStorage {
   ResultID next_id_{1};
 };
 
-// Default task traits
+namespace detail {
+
+// If T defines `static constexpr TaskObservability observability`, use it; else default basic.
+template <typename U, typename = void>
+struct task_type_observability {
+  static constexpr TaskObservability value = TaskObservability::basic;
+};
+
+template <typename U>
+struct task_type_observability<U, std::void_t<decltype(U::observability)>> {
+  static constexpr TaskObservability value = U::observability;
+};
+
+// If T defines `static constexpr bool cancellable`, use it; else false.
+template <typename U, typename = void>
+struct task_type_cancellable {
+  static constexpr bool value = false;
+};
+
+template <typename U>
+struct task_type_cancellable<U, std::void_t<decltype(U::cancellable)>> {
+  static constexpr bool value = U::cancellable;
+};
+
+}  // namespace detail
+
+// Default task traits (picks up T::observability / T::cancellable when present; specialize to override)
 template <typename T>
 struct task_traits {
   // metadata
@@ -250,8 +276,8 @@ struct task_traits {
   static constexpr TaskPriority priority = TaskPriority::normal;
 
   // capabilities
-  static constexpr bool cancellable = false;
-  static constexpr TaskObservability observability = TaskObservability::basic;
+  static constexpr bool cancellable = detail::task_type_cancellable<T>::value;
+  static constexpr TaskObservability observability = detail::task_type_observability<T>::value;
 };
 
 // Task trait detection using SFINAE

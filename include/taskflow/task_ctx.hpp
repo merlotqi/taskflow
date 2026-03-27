@@ -1,3 +1,4 @@
+// TaskCtx: user-facing control inside task bodies. TaskRuntimeCtx: minimal data for the executor.
 #pragma once
 
 #include <functional>
@@ -11,14 +12,14 @@ namespace taskflow {
 // Forward declarations
 class StateStorage;
 
-// TaskCtx - Friendly API for task lifecycle management
+// Passed to your callable as task(ctx). Not thread-safe: use only from the worker running that task.
 struct TaskCtx {
   TaskID id;
   StateStorage* states;
-  ResultStorage* result_storage{nullptr};  // Optional result storage
+  ResultStorage* result_storage{nullptr};            // Optional result storage
   std::function<bool(TaskID)> cancellation_checker;  // For cancellation checking
 
-  // Lifecycle management
+  // Typical order: begin() -> work -> success() / failure() / *_with_result().
   void begin();
   void update_progress(float progress, const std::string& message = "");
   void success();
@@ -53,7 +54,7 @@ struct TaskCtx {
   }
 };
 
-// Task execution context
+// Built by TaskManager; forwarded into AnyTask::execute_task and expanded to TaskCtx inside execute().
 struct TaskRuntimeCtx {
   TaskID id;
   StateStorage* states;
@@ -90,8 +91,6 @@ inline void taskflow::TaskCtx::failure(const std::string& error_message) {
     states->set_error(id, error_message);
   }
 }
-
-
 
 inline taskflow::TaskState taskflow::TaskCtx::current_state() const {
   if (states) {

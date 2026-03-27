@@ -56,14 +56,17 @@ struct AnyTask {
 };
 
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, AnyTask>::type make_any_task(TaskID id, Task task, TaskLifecycle lifecycle = TaskLifecycle::disposable) {
+typename std::enable_if<is_task_v<Task>, AnyTask>::type make_any_task(
+    TaskID id, Task task, TaskLifecycle lifecycle = TaskLifecycle::disposable) {
   return AnyTask(id, std::move(task), lifecycle);
 }
 
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, void>::type execute(Task& task, TaskRuntimeCtx& rctx);
+typename std::enable_if<is_task_v<Task>, void>::type execute(Task& task, TaskRuntimeCtx& rctx,
+                                                             ResultStorage* result_storage);
 
 template <typename Task>
-typename std::enable_if<is_task_v<Task>, void>::type execute(Task&& task, TaskRuntimeCtx& rctx);
+typename std::enable_if<is_task_v<Task>, void>::type execute(Task&& task, TaskRuntimeCtx& rctx,
+                                                              ResultStorage* result_storage);
 
 }  // namespace taskflow

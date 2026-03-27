@@ -1,3 +1,4 @@
+// Thread-safe maps keyed by TaskID: state, timestamps, progress, errors, result locators.
 #pragma once
 
 #include <any>
@@ -7,12 +8,14 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "task_traits.hpp"
 
 namespace taskflow {
 
+// All public methods take the internal mutex; safe to call concurrently from TaskManager and workers.
 class StateStorage {
  public:
   void set_state(TaskID id, TaskState state) {
@@ -48,7 +51,7 @@ class StateStorage {
                   "\n==============================================================================\n"
                   " [TaskFlow Error]: Invalid ProgressType detected!\n"
                   " ------------------------------------------------------------------------------\n"
-                  " 1. SIZE LIMIT: Progress objects must be <= 1024 bytes (1KB) to ensure low-latency.\n"
+                  " 1. SIZE LIMIT: Progress objects must be <= 512 bytes to ensure low-latency.\n"
                   " 2. TYPE LIMIT: Only trivially copyable structs, std::string, or nlohmann::json are allowed.\n"
                   " 3. RECOMMENDATION: Do not attach large business data here. Use ResultStorage instead.\n"
                   "==============================================================================");
@@ -148,22 +151,34 @@ class StateStorage {
     return stats;
   }
 
-  void cleanup_old_tasks(std::chrono::hours max_age) {
+  // Drops tasks whose timestamp is older than max_age; returns removed ids and any ResultLocator
+  // so the caller can delete payloads from ResultStorage.
+  [[nodiscard]] std::vector<std::pair<TaskID, std::optional<ResultLocator>>> cleanup_old_tasks(
+      std::chrono::hours max_age) {
     auto now = std::chrono::system_clock::now();
     auto cutoff = now - max_age;
 
+    std::vector<std::pair<TaskID, std::optional<ResultLocator>>> removed;
     std::unique_lock lock(mutex_);
     for (auto it = timestamps_.begin(); it != timestamps_.end();) {
       if (it->second < cutoff) {
-        auto id = it->first;
+        const TaskID id = it->first;
+        std::optional<ResultLocator> locator;
+        auto rl = result_locators_.find(id);
+        if (rl != result_locators_.end()) {
+          locator = rl->second;
+        }
         states_.erase(id);
         progress_info_.erase(id);
         error_messages_.erase(id);
+        result_locators_.erase(id);
         it = timestamps_.erase(it);
+        removed.emplace_back(id, std::move(locator));
       } else {
         ++it;
       }
     }
+    return removed;
   }
 
  private:
