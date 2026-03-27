@@ -32,7 +32,11 @@ constexpr std::string_view type_name_impl() {
   constexpr std::string_view suffix = "";
 #endif
 
+#if defined(_MSC_VER)
+  constexpr std::string_view function = __FUNCSIG__;
+#else
   constexpr std::string_view function = __PRETTY_FUNCTION__;
+#endif
   const size_t start = function.find(prefix) + prefix.size();
   const size_t end = function.find(suffix, start);
 
