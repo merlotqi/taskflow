@@ -37,37 +37,40 @@ if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
         include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowExamples.cmake")
         taskflow_register_examples(TaskFlow::TaskFlow)
     endif()
+
+    # install(EXPORT) requires every INTERFACE-linked target to be exported;
+    # nlohmann_json from FetchContent is not, so skip install rules when TaskFlow
+    # is add_subdirectory'd by another project (e.g. xproc).
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+    install(TARGETS TaskFlow
+        EXPORT TaskFlowTargets
+    )
+
+    install(EXPORT TaskFlowTargets
+        FILE TaskFlowTargets.cmake
+        NAMESPACE TaskFlow::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+    )
+
+    configure_package_config_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+    )
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+    )
 endif()
-
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
-
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-install(TARGETS TaskFlow
-    EXPORT TaskFlowTargets
-)
-
-install(EXPORT TaskFlowTargets
-    FILE TaskFlowTargets.cmake
-    NAMESPACE TaskFlow::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
-
-configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
-
-write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
