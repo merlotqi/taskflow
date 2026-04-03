@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <taskflow/taskflow.hpp>
 
@@ -48,22 +49,24 @@ struct print_task {
 };
 
 // --- Observer: logs events to stdout ---
-class console_observer : public taskflow::observer::observer {
+class console_observer : public taskflow::obs::observer {
  public:
   void on_task_start(std::size_t, std::size_t node_id, std::string_view task_type,
                      std::int32_t attempt) noexcept override {
     std::cout << "  START node=" << node_id << " type=" << task_type << " attempt=" << attempt << "\n";
   }
   void on_task_complete(std::size_t, std::size_t node_id, std::string_view task_type,
-                        std::int64_t dur) noexcept override {
-    std::cout << "  DONE  node=" << node_id << " type=" << task_type << " took=" << dur << "ms\n";
+                        std::chrono::milliseconds dur) noexcept override {
+    std::cout << "  DONE  node=" << node_id << " type=" << task_type << " took=" << dur.count() << "ms\n";
   }
   void on_task_fail(std::size_t, std::size_t node_id, std::string_view task_type, std::string_view error,
-                    std::int64_t dur) noexcept override {
-    std::cout << "  FAIL  node=" << node_id << " type=" << task_type << " err=" << error << " took=" << dur << "ms\n";
+                    std::chrono::milliseconds dur) noexcept override {
+    std::cout << "  FAIL  node=" << node_id << " type=" << task_type << " err=" << error << " took=" << dur.count()
+              << "ms\n";
   }
-  void on_workflow_complete(std::size_t, taskflow::core::task_state state, std::int64_t dur) noexcept override {
-    std::cout << "WORKFLOW " << taskflow::core::to_string(state) << " took=" << dur << "ms\n";
+  void on_workflow_complete(std::size_t, taskflow::core::task_state state,
+                            std::chrono::milliseconds dur) noexcept override {
+    std::cout << "WORKFLOW " << taskflow::core::to_string(state) << " took=" << dur.count() << "ms\n";
   }
 };
 

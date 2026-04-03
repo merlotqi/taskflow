@@ -2,22 +2,18 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <random>
 #include <thread>
 
 #include "taskflow/engine/execution.hpp"
 #include "taskflow/engine/registry.hpp"
-#include "taskflow/observer/observer.hpp"
+#include "taskflow/obs/observer.hpp"
 
 namespace taskflow::engine {
 
-static std::int64_t now_ms() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
-
 core::task_state executor::execute_node(workflow_execution& execution, std::size_t node_id,
-                                        const itask_registry& registry,
-                                        const std::vector<observer::observer*>& observers) {
+                                        const itask_registry& registry, const std::vector<obs::observer*>& observers) {
   if (execution.is_cancelled()) {
     execution.set_node_state(node_id, core::task_state::cancelled);
     return core::task_state::cancelled;
@@ -39,14 +35,14 @@ core::task_state executor::execute_node(workflow_execution& execution, std::size
     return core::task_state::failed;
   }
 
-  auto start = now_ms();
+  auto start = std::chrono::system_clock::now();
   for (auto* obs : observers)
     if (obs) obs->on_task_start(execution.id(), node_id, node->task_type, execution.retry_count(node_id) + 1);
 
   auto& ctx = execution.context();
   ctx.set_node_id(node_id);
   ctx.set_exec_id(execution.id());
-  if (ctx.exec_start_time() == 0) ctx.set_exec_start_time(start);
+  if (ctx.exec_start_time() == std::chrono::system_clock::time_point{}) ctx.set_exec_start_time(start);
 
   execution.set_node_state(node_id, core::task_state::running);
   core::task_state result = core::task_state::failed;
@@ -56,8 +52,8 @@ core::task_state executor::execute_node(workflow_execution& execution, std::size
     execution.set_node_error(node_id, e.what());
   }
 
-  auto end = now_ms();
-  auto dur = end - start;
+  auto end = std::chrono::system_clock::now();
+  auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
   if (result == core::task_state::success) {
     execution.set_node_state(node_id, core::task_state::success);
     execution.mark_node_completed(node_id);
@@ -75,7 +71,7 @@ core::task_state executor::execute_node(workflow_execution& execution, std::size
 
 core::task_state executor::execute_with_retry(workflow_execution& execution, std::size_t node_id,
                                               const itask_registry& registry,
-                                              const std::vector<observer::observer*>& observers) {
+                                              const std::vector<obs::observer*>& observers) {
   if (execution.is_cancelled()) {
     execution.set_node_state(node_id, core::task_state::cancelled);
     return core::task_state::cancelled;
@@ -90,25 +86,65 @@ core::task_state executor::execute_with_retry(workflow_execution& execution, std
     return core::task_state::success;
   }
 
-  core::retry_policy policy{1, 0, 1.0f};
+  core::retry_policy policy{};
+  policy.max_attempts = 1;
+  policy.initial_delay = std::chrono::milliseconds{0};
+  policy.backoff_multiplier = 1.0f;
   if (node->retry) policy = *node->retry;
 
   std::int32_t attempts = 0;
   do {
     attempts++;
     if (attempts > 1) {
+      // Set retry state before retrying
+      execution.set_node_state(node_id, core::task_state::retry);
       execution.increment_retry(node_id);
-      if (policy.initial_delay_ms > 0) {
-        auto delay =
-            static_cast<std::int64_t>(policy.initial_delay_ms * std::pow(policy.backoff_multiplier, attempts - 2));
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+
+      std::chrono::milliseconds delay{0};
+      if (policy.initial_delay.count() > 0) {
+        // Calculate delay with exponential backoff
+        auto delay_ms =
+            static_cast<std::int64_t>(policy.initial_delay.count() * std::pow(policy.backoff_multiplier, attempts - 2));
+        delay = std::chrono::milliseconds(delay_ms);
+
+        // Apply max delay cap
+        if (policy.max_delay.count() > 0 && delay > policy.max_delay) {
+          delay = policy.max_delay;
+        }
+
+        // Apply jitter if enabled
+        if (policy.jitter && policy.jitter_range.count() > 0) {
+          static thread_local std::mt19937 gen(std::random_device{}());
+          std::uniform_int_distribution<std::int64_t> dist(0, policy.jitter_range.count());
+          delay += std::chrono::milliseconds(dist(gen));
+        }
+      }
+
+      // Notify observers about retry
+      const auto* node = bp->find_node(node_id);
+      if (node) {
+        for (auto* obs : observers)
+          if (obs) obs->on_task_retry(execution.id(), node_id, node->task_type, attempts, delay);
+      }
+
+      if (delay.count() > 0) {
+        std::this_thread::sleep_for(delay);
       }
     }
+
     auto r = execute_node(execution, node_id, registry, observers);
     if (r == core::task_state::success) return r;
     if (execution.is_cancelled()) {
       execution.set_node_state(node_id, core::task_state::cancelled);
       return core::task_state::cancelled;
+    }
+
+    // Check custom retry condition if provided
+    if (policy.should_retry) {
+      const auto& ns = execution.get_node_state(node_id);
+      if (!(*policy.should_retry)(ns.error_message, r)) {
+        return core::task_state::failed;  // Don't retry based on condition
+      }
     }
   } while (attempts < policy.max_attempts);
   return core::task_state::failed;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <any>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -86,7 +87,6 @@ class task_ctx {
   }
 
   [[nodiscard]] bool contains(std::string_view key) const;
-  /// Raw map access without locking. Not thread-safe vs concurrent set/get; use only single-threaded or after run.
   [[nodiscard]] const std::unordered_map<std::string, std::any>& data() const noexcept;
   [[nodiscard]] std::unordered_map<std::string, std::any>& data() noexcept;
   void set_data(std::unordered_map<std::string, std::any> d);
@@ -105,8 +105,9 @@ class task_ctx {
   [[nodiscard]] std::size_t exec_id() const noexcept;
   void set_exec_id(std::size_t id) noexcept;
 
-  [[nodiscard]] std::int64_t exec_start_time() const noexcept;
-  void set_exec_start_time(std::int64_t t) noexcept;
+  /// Wall-clock time when the current execution started this run; default time_point means unset.
+  [[nodiscard]] std::chrono::system_clock::time_point exec_start_time() const noexcept;
+  void set_exec_start_time(std::chrono::system_clock::time_point t) noexcept;
 
   // Result collection
   void set_collector(engine::result_collector* collector) noexcept;
@@ -145,7 +146,7 @@ class task_ctx {
   cancellation_token cancellation_token_;
   std::size_t node_id_ = 0;
   std::size_t exec_id_ = 0;
-  std::int64_t exec_start_time_ = 0;
+  std::chrono::system_clock::time_point exec_start_time_{};
   engine::result_collector* collector_ = nullptr;
 };
 

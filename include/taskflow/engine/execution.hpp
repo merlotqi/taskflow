@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -47,8 +48,8 @@ class workflow_execution {
   [[nodiscard]] core::task_ctx& context() noexcept;
   [[nodiscard]] const core::task_ctx& context() const noexcept;
 
-  [[nodiscard]] std::int64_t start_time() const noexcept;
-  [[nodiscard]] std::int64_t end_time() const noexcept;
+  [[nodiscard]] std::chrono::system_clock::time_point start_time() const noexcept;
+  [[nodiscard]] std::chrono::system_clock::time_point end_time() const noexcept;
   void mark_started();
   void mark_completed();
 
@@ -77,8 +78,8 @@ class workflow_execution {
   std::unordered_set<core::idempotency_key, core::idempotency_key_hash> completed_nodes_;
   core::task_ctx ctx_;
   result_collector results_;
-  std::int64_t start_time_ = 0;
-  std::int64_t end_time_ = 0;
+  std::chrono::system_clock::time_point start_time_{};
+  std::chrono::system_clock::time_point end_time_{};
   core::audit_log* audit_log_ = nullptr;
 
   mutable std::unique_ptr<std::mutex> state_mutex_;

@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(taskflow_tests
   orchestrator_test.cpp
+  retry_test.cpp
 )
 
 target_link_libraries(taskflow_tests PRIVATE taskflow GTest::gtest_main)

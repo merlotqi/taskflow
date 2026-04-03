@@ -37,17 +37,17 @@
 #include <taskflow/integration/event_hooks.hpp>
 
 // Observer
-#include <taskflow/observer/hooks_observer.hpp>
-#include <taskflow/observer/logger.hpp>
-#include <taskflow/observer/metrics.hpp>
-#include <taskflow/observer/observer.hpp>
+#include <taskflow/obs/hooks_observer.hpp>
+#include <taskflow/obs/logger.hpp>
+#include <taskflow/obs/metrics.hpp>
+#include <taskflow/obs/observer.hpp>
 
 namespace taskflow {
 
 using namespace core;
 using namespace engine;
 using namespace storage;
-using namespace observer;
+using namespace obs;
 using namespace workflow;
 
 }  // namespace taskflow

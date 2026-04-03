@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <future>
 #include <memory>
@@ -21,7 +22,7 @@ class result_storage;
 class state_storage;
 }  // namespace taskflow::core
 
-namespace taskflow::observer {
+namespace taskflow::obs {
 class observer;
 }
 
@@ -67,10 +68,10 @@ class orchestrator {
   // Cleanup methods
   bool cleanup_execution(std::size_t execution_id);
   std::size_t cleanup_completed_executions();
-  std::size_t cleanup_old_executions(std::int64_t older_than_ms);
+  std::size_t cleanup_old_executions(std::chrono::milliseconds older_than);
 
-  void add_observer(observer::observer* obs);
-  void remove_observer(observer::observer* obs);
+  void add_observer(obs::observer* obs);
+  void remove_observer(obs::observer* obs);
 
   [[nodiscard]] core::task_state run_sync(std::size_t execution_id, bool stop_on_first_failure = true);
   std::pair<std::size_t, core::task_state> run_sync_from_blueprint(std::size_t blueprint_id,
@@ -92,7 +93,7 @@ class orchestrator {
   std::unordered_map<std::size_t, workflow::workflow_blueprint> blueprints_;
   std::unordered_map<std::string, workflow::workflow_blueprint> named_blueprints_;
   std::unordered_map<std::size_t, workflow_execution> executions_;
-  std::vector<observer::observer*> observers_;
+  std::vector<obs::observer*> observers_;
   std::unique_ptr<core::state_storage> storage_;
   std::unique_ptr<core::result_storage> result_storage_;
   std::unique_ptr<parallel_executor> executor_;

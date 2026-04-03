@@ -1,6 +1,7 @@
 #include "taskflow/engine/orchestrator.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <string>
 #include <system_error>
 
@@ -9,8 +10,8 @@
 #include "taskflow/engine/default_thread_pool.hpp"
 #include "taskflow/engine/executor.hpp"
 #include "taskflow/engine/scheduler.hpp"
-#include "taskflow/observer/hooks_observer.hpp"
-#include "taskflow/observer/observer.hpp"
+#include "taskflow/obs/hooks_observer.hpp"
+#include "taskflow/obs/observer.hpp"
 
 namespace taskflow::engine {
 
@@ -114,11 +115,11 @@ const workflow_execution* orchestrator::get_execution(std::size_t id) const noex
   return it != executions_.end() ? &it->second : nullptr;
 }
 
-void orchestrator::add_observer(observer::observer* obs) {
+void orchestrator::add_observer(obs::observer* obs) {
   if (obs) observers_.push_back(obs);
 }
 
-void orchestrator::remove_observer(observer::observer* obs) {
+void orchestrator::remove_observer(obs::observer* obs) {
   observers_.erase(std::remove(observers_.begin(), observers_.end(), obs), observers_.end());
 }
 
@@ -138,8 +139,8 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
   exec->mark_started();
 
   const integration::workflow_event_hooks* hooks_ptr = event_hooks_ ? &*event_hooks_ : nullptr;
-  observer::hooks_observer hook_forward{hooks_ptr};
-  std::vector<observer::observer*> exec_observers;
+  obs::hooks_observer hook_forward{hooks_ptr};
+  std::vector<obs::observer*> exec_observers;
   exec_observers.reserve((hooks_ptr ? 1u : 0u) + observers_.size());
   if (hooks_ptr) exec_observers.push_back(&hook_forward);
   exec_observers.insert(exec_observers.end(), observers_.begin(), observers_.end());
@@ -198,7 +199,7 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
 
   exec->mark_completed();
   auto overall = exec->overall_state();
-  auto dur = exec->end_time() - exec->start_time();
+  auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(exec->end_time() - exec->start_time());
   for (auto* o : observers_)
     if (o) o->on_workflow_complete(execution_id, overall, dur);
   if (hooks_ptr) hook_forward.on_workflow_complete(execution_id, overall, dur);
@@ -235,12 +236,11 @@ std::size_t orchestrator::cleanup_completed_executions() {
   return count;
 }
 
-std::size_t orchestrator::cleanup_old_executions(std::int64_t older_than_ms) {
-  auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-                 .count();
+std::size_t orchestrator::cleanup_old_executions(std::chrono::milliseconds older_than) {
+  const auto now = std::chrono::system_clock::now();
   std::size_t count = 0;
   for (auto it = executions_.begin(); it != executions_.end();) {
-    if (it->second.is_complete() && (now - it->second.end_time()) > older_than_ms) {
+    if (it->second.is_complete() && (now - it->second.end_time()) > older_than) {
       it = executions_.erase(it);
       ++count;
     } else {

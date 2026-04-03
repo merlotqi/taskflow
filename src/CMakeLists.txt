@@ -1,23 +1,7 @@
-set(TASKFLOW_SOURCES
-  core/audit_log.cpp
-  core/task_ctx.cpp
-  workflow/blueprint.cpp
-  workflow/serializer.cpp
-  engine/default_thread_pool.cpp
-  engine/execution.cpp
-  engine/execution_snapshot.cpp
-  engine/registry.cpp
-  engine/scheduler.cpp
-  engine/executor.cpp
-  engine/orchestrator.cpp
-  observer/logger.cpp
-  observer/metrics.cpp
-  storage/memory_state_storage.cpp
-  storage/memory_result_storage.cpp
-)
+file(GLOB_RECURSE TASKFLOW_SOURCES "*.cpp")
 
-if(TASKFLOW_WITH_SQLITE)
-  list(APPEND TASKFLOW_SOURCES storage/sqlite_state_storage.cpp)
+if(NOT TASKFLOW_WITH_SQLITE)
+  list(REMOVE_ITEM TASKFLOW_SOURCES storage/sqlite_state_storage.cpp)
 endif()
 
 add_library(taskflow ${TASKFLOW_SOURCES})

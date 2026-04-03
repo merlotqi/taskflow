@@ -3,9 +3,9 @@
 #include <iostream>
 #include <string_view>
 
-#include "taskflow/observer/observer.hpp"
+#include "taskflow/obs/observer.hpp"
 
-namespace taskflow::observer {
+namespace taskflow::obs {
 
 class logging_observer : public observer {
  public:
@@ -15,15 +15,16 @@ class logging_observer : public observer {
                      std::int32_t attempt) noexcept override;
 
   void on_task_complete(std::size_t exec_id, std::size_t node_id, std::string_view task_type,
-                        std::int64_t duration_ms) noexcept override;
+                        std::chrono::milliseconds duration_ms) noexcept override;
 
   void on_task_fail(std::size_t exec_id, std::size_t node_id, std::string_view task_type, std::string_view error,
-                    std::int64_t duration_ms) noexcept override;
+                    std::chrono::milliseconds duration_ms) noexcept override;
 
-  void on_workflow_complete(std::size_t exec_id, core::task_state state, std::int64_t duration_ms) noexcept override;
+  void on_workflow_complete(std::size_t exec_id, core::task_state state,
+                            std::chrono::milliseconds duration_ms) noexcept override;
 
  private:
   std::ostream& os_;
 };
 
-}  // namespace taskflow::observer
+}  // namespace taskflow::obs

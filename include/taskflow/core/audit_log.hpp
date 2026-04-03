@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <taskflow/core/types.hpp>
@@ -12,7 +13,7 @@ struct audit_entry {
   std::size_t node_id = 0;
   task_state old_state = task_state::pending;
   task_state new_state = task_state::pending;
-  std::int64_t timestamp = 0;
+  std::chrono::system_clock::time_point timestamp{};
   std::string error_message;
 };
 

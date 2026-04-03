@@ -39,7 +39,7 @@ CMake target: `taskflow`. Aliases: `TaskFlow::taskflow` and `TaskFlow::TaskFlow`
 ## Observer and storage
 
 - `orchestrator::add_observer` stores **raw pointers**; observers must outlive the orchestrator or be removed before destruction.
-- `set_event_hooks` stores `integration::workflow_event_hooks`; during `run_sync` those callbacks are driven through a `observer::hooks_observer` adapter so the engine uses a **single observer list** for per-node execution (see `observer/hooks_observer.hpp`). You can also register a `hooks_observer` yourself if you manage its lifetime.
+- `set_event_hooks` stores `integration::workflow_event_hooks`; during `run_sync` those callbacks are driven through a `obs::hooks_observer` adapter so the engine uses a **single observer list** for per-node execution (see `obs/hooks_observer.hpp`). You can also register a `hooks_observer` yourself if you manage its lifetime.
 - `set_audit_log` records state transitions on `workflow_execution`.
 - `taskflow_version_string()` in `taskflow/capi/taskflow_c.h` is a minimal **C ABI** anchor for future bindings.
 

@@ -1,9 +1,10 @@
-#include "taskflow/observer/metrics.hpp"
+#include "taskflow/obs/metrics.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <string>
 
-namespace taskflow::observer {
+namespace taskflow::obs {
 
 void metrics_observer::on_task_start(std::size_t /*exec_id*/, std::size_t /*node_id*/, std::string_view task_type,
                                      std::int32_t /*attempt*/) noexcept {
@@ -12,7 +13,7 @@ void metrics_observer::on_task_start(std::size_t /*exec_id*/, std::size_t /*node
 }
 
 void metrics_observer::on_task_complete(std::size_t /*exec_id*/, std::size_t /*node_id*/, std::string_view task_type,
-                                        std::int64_t duration_ms) noexcept {
+                                        std::chrono::milliseconds duration_ms) noexcept {
   std::lock_guard lock(mutex_);
   auto& m = metrics_[std::string(task_type)];
   m.success_count++;
@@ -22,7 +23,7 @@ void metrics_observer::on_task_complete(std::size_t /*exec_id*/, std::size_t /*n
 }
 
 void metrics_observer::on_task_fail(std::size_t /*exec_id*/, std::size_t /*node_id*/, std::string_view task_type,
-                                    std::string_view /*error*/, std::int64_t duration_ms) noexcept {
+                                    std::string_view /*error*/, std::chrono::milliseconds duration_ms) noexcept {
   std::lock_guard lock(mutex_);
   auto& m = metrics_[std::string(task_type)];
   m.fail_count++;
@@ -32,7 +33,7 @@ void metrics_observer::on_task_fail(std::size_t /*exec_id*/, std::size_t /*node_
 }
 
 void metrics_observer::on_workflow_complete(std::size_t /*exec_id*/, core::task_state /*state*/,
-                                            std::int64_t /*duration_ms*/) noexcept {
+                                            std::chrono::milliseconds /*duration_ms*/) noexcept {
   // Workflow-level metrics can be added here
 }
 
@@ -53,4 +54,4 @@ void metrics_observer::reset() {
   metrics_.clear();
 }
 
-}  // namespace taskflow::observer
+}  // namespace taskflow::obs

@@ -10,8 +10,8 @@ std::string workflow_execution::to_snapshot_json() const {
 
   nlohmann::json j;
   j["exec_id"] = exec_id_;
-  j["start_time"] = start_time_;
-  j["end_time"] = end_time_;
+  j["start_time"] = start_time_.time_since_epoch().count();
+  j["end_time"] = end_time_.time_since_epoch().count();
 
   if (blueprint_) {
     j["blueprint_json"] = workflow::serializer::to_json(*blueprint_);

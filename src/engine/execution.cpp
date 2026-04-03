@@ -40,8 +40,8 @@ workflow_execution::workflow_execution(workflow_execution&& o) noexcept
       audit_log_(o.audit_log_),
       state_mutex_(std::move(o.state_mutex_)) {
   o.exec_id_ = 0;
-  o.start_time_ = 0;
-  o.end_time_ = 0;
+  o.start_time_ = std::chrono::system_clock::time_point{};
+  o.end_time_ = std::chrono::system_clock::time_point{};
   o.audit_log_ = nullptr;
 }
 
@@ -59,8 +59,8 @@ workflow_execution& workflow_execution::operator=(workflow_execution&& o) noexce
   audit_log_ = o.audit_log_;
   state_mutex_ = std::move(o.state_mutex_);
   o.exec_id_ = 0;
-  o.start_time_ = 0;
-  o.end_time_ = 0;
+  o.start_time_ = std::chrono::system_clock::time_point{};
+  o.end_time_ = std::chrono::system_clock::time_point{};
   o.audit_log_ = nullptr;
   return *this;
 }
@@ -89,14 +89,10 @@ void workflow_execution::set_node_state(std::size_t node_id, core::task_state st
   ns.id = node_id;
   ns.state = state;
   if (state == core::task_state::running) {
-    ns.started_at =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
+    ns.started_at = std::chrono::system_clock::now();
   }
   if (state == core::task_state::success || state == core::task_state::failed || state == core::task_state::skipped) {
-    ns.finished_at =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
+    ns.finished_at = std::chrono::system_clock::now();
   }
   if (audit_log_ && old != state) {
     audit_log_->record(exec_id_, node_id, old, state, "");
@@ -129,23 +125,17 @@ const std::unordered_map<std::size_t, core::node_state>& workflow_execution::nod
 core::task_ctx& workflow_execution::context() noexcept { return ctx_; }
 const core::task_ctx& workflow_execution::context() const noexcept { return ctx_; }
 
-std::int64_t workflow_execution::start_time() const noexcept { return start_time_; }
-std::int64_t workflow_execution::end_time() const noexcept { return end_time_; }
+std::chrono::system_clock::time_point workflow_execution::start_time() const noexcept { return start_time_; }
+std::chrono::system_clock::time_point workflow_execution::end_time() const noexcept { return end_time_; }
 
 void workflow_execution::mark_started() {
   std::lock_guard<std::mutex> lock(*state_mutex_);
-  if (start_time_ == 0)
-    start_time_ =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
+  if (start_time_ == std::chrono::system_clock::time_point{}) start_time_ = std::chrono::system_clock::now();
 }
 
 void workflow_execution::mark_completed() {
   std::lock_guard<std::mutex> lock(*state_mutex_);
-  if (end_time_ == 0)
-    end_time_ =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count();
+  if (end_time_ == std::chrono::system_clock::time_point{}) end_time_ = std::chrono::system_clock::now();
 }
 
 core::task_state workflow_execution::overall_state() const {

@@ -63,9 +63,9 @@ std::size_t task_ctx::exec_id() const noexcept { return exec_id_; }
 
 void task_ctx::set_exec_id(std::size_t id) noexcept { exec_id_ = id; }
 
-std::int64_t task_ctx::exec_start_time() const noexcept { return exec_start_time_; }
+std::chrono::system_clock::time_point task_ctx::exec_start_time() const noexcept { return exec_start_time_; }
 
-void task_ctx::set_exec_start_time(std::int64_t t) noexcept { exec_start_time_ = t; }
+void task_ctx::set_exec_start_time(std::chrono::system_clock::time_point t) noexcept { exec_start_time_ = t; }
 
 void task_ctx::set_collector(engine::result_collector* collector) noexcept { collector_ = collector; }
 

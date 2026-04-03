@@ -12,9 +12,7 @@ void audit_log::record(std::size_t exec_id, std::size_t node_id, task_state old_
   entry.node_id = node_id;
   entry.old_state = old_state;
   entry.new_state = new_state;
-  entry.timestamp =
-      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-          .count();
+  entry.timestamp = std::chrono::system_clock::now();
   entry.error_message = error;
   entries_.push_back(std::move(entry));
 }
