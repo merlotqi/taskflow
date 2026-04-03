@@ -25,7 +25,7 @@ class workflow_execution {
   workflow_execution(std::size_t exec_id, workflow::workflow_blueprint bp);
   workflow_execution(std::size_t exec_id, workflow::workflow_blueprint bp, core::result_storage* result_storage);
   workflow_execution(std::size_t exec_id, workflow::workflow_blueprint bp, core::result_storage* result_storage,
-                       core::audit_log* audit_log);
+                     core::audit_log* audit_log);
 
   workflow_execution(const workflow_execution&) = delete;
   workflow_execution& operator=(const workflow_execution&) = delete;

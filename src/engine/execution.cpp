@@ -70,7 +70,10 @@ const workflow::workflow_blueprint* workflow_execution::blueprint() const noexce
 core::node_state workflow_execution::get_node_state(std::size_t node_id) const {
   std::lock_guard<std::mutex> lock(*state_mutex_);
   auto it = node_states_.find(node_id);
-  return it != node_states_.end() ? it->second : core::node_state{node_id};
+  if (it != node_states_.end()) return it->second;
+  core::node_state ns;
+  ns.id = node_id;
+  return ns;
 }
 
 void workflow_execution::set_node_state(std::size_t node_id, core::task_state state) {
@@ -203,7 +206,11 @@ void workflow_execution::mark_node_completed(std::size_t node_id) {
 
 void workflow_execution::init_node_states() {
   if (!blueprint_) return;
-  for (const auto& [id, _] : blueprint_->nodes()) node_states_[id] = core::node_state{id};
+  for (const auto& [id, _] : blueprint_->nodes()) {
+    core::node_state ns;
+    ns.id = id;
+    node_states_[id] = ns;
+  }
 }
 
 }  // namespace taskflow::engine

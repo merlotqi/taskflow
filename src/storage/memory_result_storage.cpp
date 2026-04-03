@@ -2,10 +2,9 @@
 
 namespace taskflow::storage {
 
-core::result_locator memory_result_storage::store(std::size_t exec_id,
-                                                    std::size_t node_id,
-                                                    std::string key,
-                                                    std::any value) {
+core::result_locator memory_result_storage::store(std::size_t exec_id, std::size_t node_id, std::string key,
+                                                  std::any value) {
+  (void)exec_id;
   std::lock_guard lock(mutex_);
   core::result_locator loc{node_id, std::move(key)};
   data_[loc] = std::move(value);
@@ -30,6 +29,7 @@ bool memory_result_storage::exists(const core::result_locator& loc) const {
 }
 
 std::vector<core::result_locator> memory_result_storage::list(std::size_t exec_id) const {
+  (void)exec_id;
   std::lock_guard lock(mutex_);
   std::vector<core::result_locator> result;
   for (const auto& [loc, _] : data_) {
@@ -39,6 +39,7 @@ std::vector<core::result_locator> memory_result_storage::list(std::size_t exec_i
 }
 
 void memory_result_storage::clear(std::size_t exec_id) {
+  (void)exec_id;
   std::lock_guard lock(mutex_);
   data_.clear();
 }

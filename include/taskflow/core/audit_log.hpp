@@ -2,9 +2,8 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
-
 #include <taskflow/core/types.hpp>
+#include <vector>
 
 namespace taskflow::core {
 

@@ -37,8 +37,8 @@ class orchestrator {
 
   orchestrator(const orchestrator&) = delete;
   orchestrator& operator=(const orchestrator&) = delete;
-  orchestrator(orchestrator&&) noexcept = default;
-  orchestrator& operator=(orchestrator&&) noexcept = default;
+  orchestrator(orchestrator&&) noexcept = delete;
+  orchestrator& operator=(orchestrator&&) noexcept = delete;
 
   void register_task(std::string type_name, core::task_factory factory);
   template <typename T, std::enable_if_t<core::is_task_v<T>, int> = 0>
