@@ -1,2 +1,5 @@
 add_executable(minimal_orchestrator minimal_orchestrator.cpp)
 target_link_libraries(minimal_orchestrator PRIVATE taskflow)
+
+add_executable(cancellation_example cancellation_example.cpp)
+target_link_libraries(cancellation_example PRIVATE taskflow)

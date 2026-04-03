@@ -18,6 +18,7 @@ enum class task_state : std::uint8_t {
   failed = 3,
   retry = 4,
   skipped = 5,
+  cancelled = 6,
 };
 
 [[nodiscard]] constexpr std::string_view to_string(task_state state) noexcept {
@@ -34,6 +35,8 @@ enum class task_state : std::uint8_t {
       return "retry";
     case task_state::skipped:
       return "skipped";
+    case task_state::cancelled:
+      return "cancelled";
   }
   return "unknown";
 }
@@ -45,6 +48,7 @@ enum class task_state : std::uint8_t {
   if (s == "failed") return task_state::failed;
   if (s == "retry") return task_state::retry;
   if (s == "skipped") return task_state::skipped;
+  if (s == "cancelled") return task_state::cancelled;
   return task_state::pending;
 }
 

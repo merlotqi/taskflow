@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "taskflow/core/cancellation_token.hpp"
 #include "taskflow/core/result_storage.hpp"
 #include "taskflow/core/task_ctx.hpp"
 #include "taskflow/core/types.hpp"
@@ -63,8 +64,14 @@ class workflow_execution {
 
   [[nodiscard]] std::string to_snapshot_json() const;
 
+  // Cancellation support
+  void cancel();
+  [[nodiscard]] bool is_cancelled() const noexcept;
+  [[nodiscard]] core::cancellation_token token() const;
+
  private:
   std::size_t exec_id_ = 0;
+  core::cancellation_source cancel_source_;
   std::unique_ptr<workflow::workflow_blueprint> blueprint_;
   std::unordered_map<std::size_t, core::node_state> node_states_;
   std::unordered_set<core::idempotency_key, core::idempotency_key_hash> completed_nodes_;

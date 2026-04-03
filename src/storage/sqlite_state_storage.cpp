@@ -43,8 +43,7 @@ sqlite_state_storage& sqlite_state_storage::operator=(sqlite_state_storage&& o) 
 
 void sqlite_state_storage::init_schema() {
   auto* db = static_cast<sqlite3*>(db_);
-  const char* sql =
-      "CREATE TABLE IF NOT EXISTS executions (id INTEGER PRIMARY KEY, blob TEXT NOT NULL);";
+  const char* sql = "CREATE TABLE IF NOT EXISTS executions (id INTEGER PRIMARY KEY, blob TEXT NOT NULL);";
   char* err = nullptr;
   if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
     std::string msg = err ? err : "sqlite schema";

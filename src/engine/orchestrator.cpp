@@ -1,9 +1,10 @@
 #include "taskflow/engine/orchestrator.hpp"
 
 #include <algorithm>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
+#include "taskflow/core/error_code.hpp"
 #include "taskflow/core/state_storage.hpp"
 #include "taskflow/engine/default_thread_pool.hpp"
 #include "taskflow/engine/executor.hpp"
@@ -30,7 +31,8 @@ orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor, std::uni
 orchestrator::orchestrator(std::unique_ptr<core::result_storage> result_storage)
     : result_storage_(std::move(result_storage)), executor_(std::make_unique<default_thread_pool>()) {}
 
-orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::result_storage> result_storage)
+orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor,
+                           std::unique_ptr<core::result_storage> result_storage)
     : result_storage_(std::move(result_storage)), executor_(std::move(executor)) {
   if (!executor_) executor_ = std::make_unique<default_thread_pool>();
 }
@@ -88,14 +90,16 @@ std::size_t orchestrator::create_execution_from_blueprint(const workflow::workfl
 
 std::size_t orchestrator::create_execution(std::size_t blueprint_id) {
   auto it = blueprints_.find(blueprint_id);
-  if (it == blueprints_.end()) throw std::runtime_error("blueprint not found: " + std::to_string(blueprint_id));
+  if (it == blueprints_.end()) {
+    throw std::system_error(core::make_error_code(core::errc::blueprint_not_found));
+  }
   return create_execution_from_blueprint(it->second);
 }
 
 std::size_t orchestrator::create_execution(std::string_view blueprint_name) {
   auto it = named_blueprints_.find(std::string(blueprint_name));
   if (it == named_blueprints_.end()) {
-    throw std::runtime_error(std::string("blueprint not found: ") + std::string(blueprint_name));
+    throw std::system_error(core::make_error_code(core::errc::blueprint_not_found));
   }
   return create_execution_from_blueprint(it->second);
 }
@@ -120,12 +124,16 @@ void orchestrator::remove_observer(observer::observer* obs) {
 
 core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_first_failure) {
   auto* exec = get_execution(execution_id);
-  if (!exec) throw std::runtime_error("execution not found: " + std::to_string(execution_id));
+  if (!exec) {
+    throw std::system_error(core::make_error_code(core::errc::execution_not_found));
+  }
 
   const auto* bp = exec->blueprint();
   if (!bp) return core::task_state::failed;
   auto err = bp->validate();
-  if (!err.empty()) throw std::runtime_error("invalid blueprint: " + err);
+  if (!err.empty()) {
+    throw std::system_error(core::make_error_code(core::errc::invalid_blueprint));
+  }
 
   exec->mark_started();
 
@@ -139,6 +147,8 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
   bool failed = false;
   while (true) {
     if (failed && stop_on_first_failure) break;
+
+    if (exec->is_cancelled()) break;
 
     if (exec->is_complete()) break;
 
@@ -177,6 +187,15 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
     }
   }
 
+  if (exec->is_cancelled()) {
+    for (const auto& [nid, _] : bp->nodes()) {
+      auto state = exec->get_node_state(nid).state;
+      if (state == core::task_state::pending || state == core::task_state::running) {
+        exec->set_node_state(nid, core::task_state::cancelled);
+      }
+    }
+  }
+
   exec->mark_completed();
   auto overall = exec->overall_state();
   auto dur = exec->end_time() - exec->start_time();
@@ -195,5 +214,61 @@ std::pair<std::size_t, core::task_state> orchestrator::run_sync_from_blueprint(s
 parallel_executor* orchestrator::executor() noexcept { return executor_.get(); }
 
 const parallel_executor* orchestrator::executor() const noexcept { return executor_.get(); }
+
+bool orchestrator::cleanup_execution(std::size_t execution_id) {
+  auto it = executions_.find(execution_id);
+  if (it == executions_.end()) return false;
+  executions_.erase(it);
+  return true;
+}
+
+std::size_t orchestrator::cleanup_completed_executions() {
+  std::size_t count = 0;
+  for (auto it = executions_.begin(); it != executions_.end();) {
+    if (it->second.is_complete()) {
+      it = executions_.erase(it);
+      ++count;
+    } else {
+      ++it;
+    }
+  }
+  return count;
+}
+
+std::size_t orchestrator::cleanup_old_executions(std::int64_t older_than_ms) {
+  auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                 .count();
+  std::size_t count = 0;
+  for (auto it = executions_.begin(); it != executions_.end();) {
+    if (it->second.is_complete() && (now - it->second.end_time()) > older_than_ms) {
+      it = executions_.erase(it);
+      ++count;
+    } else {
+      ++it;
+    }
+  }
+  return count;
+}
+
+std::future<core::task_state> orchestrator::run_async(std::size_t execution_id, bool stop_on_first_failure) {
+  return std::async(std::launch::async, [this, execution_id, stop_on_first_failure]() {
+    return run_sync(execution_id, stop_on_first_failure);
+  });
+}
+
+std::pair<std::size_t, std::future<core::task_state>> orchestrator::run_async_from_blueprint(
+    std::size_t blueprint_id, bool stop_on_first_failure) {
+  auto exec_id = create_execution(blueprint_id);
+  return {exec_id, run_async(exec_id, stop_on_first_failure)};
+}
+
+bool orchestrator::cancel_execution(std::size_t execution_id) {
+  auto* exec = get_execution(execution_id);
+  if (!exec) {
+    return false;
+  }
+  exec->cancel();
+  return true;
+}
 
 }  // namespace taskflow::engine

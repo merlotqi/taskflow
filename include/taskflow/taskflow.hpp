@@ -3,6 +3,7 @@
 // Core
 #include <taskflow/core/audit_log.hpp>
 #include <taskflow/core/cpo.hpp>
+#include <taskflow/core/error_code.hpp>
 #include <taskflow/core/result.hpp>
 #include <taskflow/core/result_storage.hpp>
 #include <taskflow/core/state_storage.hpp>

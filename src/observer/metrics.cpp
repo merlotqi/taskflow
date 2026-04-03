@@ -5,14 +5,14 @@
 
 namespace taskflow::observer {
 
-void metrics_observer::on_task_start(std::size_t /*exec_id*/, std::size_t /*node_id*/,
-                                     std::string_view task_type, std::int32_t /*attempt*/) noexcept {
+void metrics_observer::on_task_start(std::size_t /*exec_id*/, std::size_t /*node_id*/, std::string_view task_type,
+                                     std::int32_t /*attempt*/) noexcept {
   std::lock_guard lock(mutex_);
   metrics_[std::string(task_type)].start_count++;
 }
 
-void metrics_observer::on_task_complete(std::size_t /*exec_id*/, std::size_t /*node_id*/,
-                                        std::string_view task_type, std::int64_t duration_ms) noexcept {
+void metrics_observer::on_task_complete(std::size_t /*exec_id*/, std::size_t /*node_id*/, std::string_view task_type,
+                                        std::int64_t duration_ms) noexcept {
   std::lock_guard lock(mutex_);
   auto& m = metrics_[std::string(task_type)];
   m.success_count++;

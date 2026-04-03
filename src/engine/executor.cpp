@@ -18,6 +18,11 @@ static std::int64_t now_ms() {
 core::task_state executor::execute_node(workflow_execution& execution, std::size_t node_id,
                                         const itask_registry& registry,
                                         const std::vector<observer::observer*>& observers) {
+  if (execution.is_cancelled()) {
+    execution.set_node_state(node_id, core::task_state::cancelled);
+    return core::task_state::cancelled;
+  }
+
   if (execution.is_node_completed(node_id)) {
     return core::task_state::success;
   }
@@ -71,6 +76,11 @@ core::task_state executor::execute_node(workflow_execution& execution, std::size
 core::task_state executor::execute_with_retry(workflow_execution& execution, std::size_t node_id,
                                               const itask_registry& registry,
                                               const std::vector<observer::observer*>& observers) {
+  if (execution.is_cancelled()) {
+    execution.set_node_state(node_id, core::task_state::cancelled);
+    return core::task_state::cancelled;
+  }
+
   const auto* bp = execution.blueprint();
   if (!bp) return core::task_state::failed;
   const auto* node = bp->find_node(node_id);
@@ -96,6 +106,10 @@ core::task_state executor::execute_with_retry(workflow_execution& execution, std
     }
     auto r = execute_node(execution, node_id, registry, observers);
     if (r == core::task_state::success) return r;
+    if (execution.is_cancelled()) {
+      execution.set_node_state(node_id, core::task_state::cancelled);
+      return core::task_state::cancelled;
+    }
   } while (attempts < policy.max_attempts);
   return core::task_state::failed;
 }

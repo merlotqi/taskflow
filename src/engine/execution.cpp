@@ -29,6 +29,7 @@ workflow_execution::workflow_execution(std::size_t exec_id, workflow::workflow_b
 
 workflow_execution::workflow_execution(workflow_execution&& o) noexcept
     : exec_id_(o.exec_id_),
+      cancel_source_(std::move(o.cancel_source_)),
       blueprint_(std::move(o.blueprint_)),
       node_states_(std::move(o.node_states_)),
       completed_nodes_(std::move(o.completed_nodes_)),
@@ -47,6 +48,7 @@ workflow_execution::workflow_execution(workflow_execution&& o) noexcept
 workflow_execution& workflow_execution::operator=(workflow_execution&& o) noexcept {
   if (this == &o) return *this;
   exec_id_ = o.exec_id_;
+  cancel_source_ = std::move(o.cancel_source_);
   blueprint_ = std::move(o.blueprint_);
   node_states_ = std::move(o.node_states_);
   completed_nodes_ = std::move(o.completed_nodes_);
@@ -148,7 +150,7 @@ void workflow_execution::mark_completed() {
 
 core::task_state workflow_execution::overall_state() const {
   std::lock_guard<std::mutex> lock(*state_mutex_);
-  bool has_running = false, has_pending = false, has_failed = false;
+  bool has_running = false, has_pending = false, has_failed = false, has_cancelled = false;
   for (const auto& [_, ns] : node_states_) {
     switch (ns.state) {
       case core::task_state::running:
@@ -160,6 +162,9 @@ core::task_state workflow_execution::overall_state() const {
       case core::task_state::failed:
         has_failed = true;
         break;
+      case core::task_state::cancelled:
+        has_cancelled = true;
+        break;
       case core::task_state::retry:
         has_pending = true;
         break;
@@ -168,6 +173,7 @@ core::task_state workflow_execution::overall_state() const {
     }
   }
   if (has_failed) return core::task_state::failed;
+  if (has_cancelled) return core::task_state::cancelled;
   if (has_running) return core::task_state::running;
   if (has_pending) return core::task_state::pending;
   return core::task_state::success;
@@ -177,7 +183,7 @@ bool workflow_execution::is_complete() const {
   std::lock_guard<std::mutex> lock(*state_mutex_);
   for (const auto& [_, ns] : node_states_) {
     if (ns.state != core::task_state::success && ns.state != core::task_state::failed &&
-        ns.state != core::task_state::skipped)
+        ns.state != core::task_state::skipped && ns.state != core::task_state::cancelled)
       return false;
   }
   return true;
@@ -212,5 +218,11 @@ void workflow_execution::init_node_states() {
     node_states_[id] = ns;
   }
 }
+
+void workflow_execution::cancel() { cancel_source_.cancel(); }
+
+bool workflow_execution::is_cancelled() const noexcept { return cancel_source_.is_cancelled(); }
+
+core::cancellation_token workflow_execution::token() const { return cancel_source_.token(); }
 
 }  // namespace taskflow::engine

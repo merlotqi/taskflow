@@ -12,6 +12,7 @@ task_ctx::task_ctx(task_ctx&& other) noexcept
       data_(std::move(other.data_)),
       progress_(other.progress_.load()),
       cancelled_(other.cancelled_.load()),
+      cancellation_token_(std::move(other.cancellation_token_)),
       node_id_(other.node_id_),
       exec_id_(other.exec_id_),
       exec_start_time_(other.exec_start_time_),
@@ -23,6 +24,7 @@ task_ctx& task_ctx::operator=(task_ctx&& other) noexcept {
     data_ = std::move(other.data_);
     progress_.store(other.progress_.load());
     cancelled_.store(other.cancelled_.load());
+    cancellation_token_ = std::move(other.cancellation_token_);
     node_id_ = other.node_id_;
     exec_id_ = other.exec_id_;
     exec_start_time_ = other.exec_start_time_;
@@ -66,5 +68,9 @@ std::int64_t task_ctx::exec_start_time() const noexcept { return exec_start_time
 void task_ctx::set_exec_start_time(std::int64_t t) noexcept { exec_start_time_ = t; }
 
 void task_ctx::set_collector(engine::result_collector* collector) noexcept { collector_ = collector; }
+
+void task_ctx::set_cancellation_token(cancellation_token token) { cancellation_token_ = std::move(token); }
+
+const cancellation_token& task_ctx::get_cancellation_token() const noexcept { return cancellation_token_; }
 
 }  // namespace taskflow::core

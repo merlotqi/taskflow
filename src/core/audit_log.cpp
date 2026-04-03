@@ -12,9 +12,9 @@ void audit_log::record(std::size_t exec_id, std::size_t node_id, task_state old_
   entry.node_id = node_id;
   entry.old_state = old_state;
   entry.new_state = new_state;
-  entry.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                        .count();
+  entry.timestamp =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+          .count();
   entry.error_message = error;
   entries_.push_back(std::move(entry));
 }
@@ -33,12 +33,8 @@ std::vector<audit_entry> audit_log::get_node_history(std::size_t exec_id, std::s
   return result;
 }
 
-const std::vector<audit_entry>& audit_log::all_entries() const {
-  return entries_;
-}
+const std::vector<audit_entry>& audit_log::all_entries() const { return entries_; }
 
-void audit_log::clear() {
-  entries_.clear();
-}
+void audit_log::clear() { entries_.clear(); }
 
 }  // namespace taskflow::core

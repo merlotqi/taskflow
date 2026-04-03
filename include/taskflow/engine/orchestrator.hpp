@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -63,12 +64,25 @@ class orchestrator {
   [[nodiscard]] workflow_execution* get_execution(std::size_t id) noexcept;
   [[nodiscard]] const workflow_execution* get_execution(std::size_t id) const noexcept;
 
+  // Cleanup methods
+  bool cleanup_execution(std::size_t execution_id);
+  std::size_t cleanup_completed_executions();
+  std::size_t cleanup_old_executions(std::int64_t older_than_ms);
+
   void add_observer(observer::observer* obs);
   void remove_observer(observer::observer* obs);
 
   [[nodiscard]] core::task_state run_sync(std::size_t execution_id, bool stop_on_first_failure = true);
   std::pair<std::size_t, core::task_state> run_sync_from_blueprint(std::size_t blueprint_id,
                                                                    bool stop_on_first_failure = true);
+
+  // Async execution
+  std::future<core::task_state> run_async(std::size_t execution_id, bool stop_on_first_failure = true);
+  std::pair<std::size_t, std::future<core::task_state>> run_async_from_blueprint(std::size_t blueprint_id,
+                                                                                 bool stop_on_first_failure = true);
+
+  // Cancellation
+  bool cancel_execution(std::size_t execution_id);
 
   [[nodiscard]] parallel_executor* executor() noexcept;
   [[nodiscard]] const parallel_executor* executor() const noexcept;

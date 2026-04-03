@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include "taskflow/core/cancellation_token.hpp"
 #include "taskflow/engine/result_collector.hpp"
 #include "traits.hpp"
 
@@ -95,6 +96,8 @@ class task_ctx {
 
   void cancel();
   [[nodiscard]] bool is_cancelled() const noexcept;
+  void set_cancellation_token(cancellation_token token);
+  [[nodiscard]] const cancellation_token& get_cancellation_token() const noexcept;
 
   [[nodiscard]] std::size_t node_id() const noexcept;
   void set_node_id(std::size_t id) noexcept;
@@ -139,6 +142,7 @@ class task_ctx {
   std::unordered_map<std::string, std::any> data_;
   std::atomic<float> progress_{0.0f};
   std::atomic<bool> cancelled_{false};
+  cancellation_token cancellation_token_;
   std::size_t node_id_ = 0;
   std::size_t exec_id_ = 0;
   std::int64_t exec_start_time_ = 0;
