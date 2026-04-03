@@ -1,78 +1,132 @@
-#include <taskflow/workflow/blueprint.hpp>
+#include "taskflow/workflow/blueprint.hpp"
 
 #include <queue>
-#include <stdexcept>
-#include <unordered_map>
-#include <unordered_set>
 
-namespace tf {
+namespace taskflow::workflow {
 
-void WorkflowBlueprint::add_node(NodeDef node) {
-  if (index_.count(node.id)) {
-    throw std::invalid_argument("duplicate node id: " + node.id);
-  }
-  index_[node.id] = nodes_.size();
-  nodes_.push_back(std::move(node));
+void workflow_blueprint::add_node(node_def node) {
+  nodes_[node.id] = std::move(node);
+  rebuild_adjacency();
 }
 
-void WorkflowBlueprint::add_edge(EdgeDef edge) {
-  if (!find_node(edge.from)) {
-    throw std::invalid_argument("edge from unknown node: " + edge.from);
-  }
-  if (!find_node(edge.to)) {
-    throw std::invalid_argument("edge to unknown node: " + edge.to);
-  }
+const node_def* workflow_blueprint::find_node(std::size_t id) const noexcept {
+  auto it = nodes_.find(id);
+  return it != nodes_.end() ? &it->second : nullptr;
+}
+
+bool workflow_blueprint::has_node(std::size_t id) const noexcept { return nodes_.find(id) != nodes_.end(); }
+
+const std::unordered_map<std::size_t, node_def>& workflow_blueprint::nodes() const noexcept { return nodes_; }
+
+void workflow_blueprint::add_edge(edge_def edge) {
+  if (!has_node(edge.from) || !has_node(edge.to)) return;
   edges_.push_back(std::move(edge));
+  rebuild_adjacency();
 }
 
-const NodeDef* WorkflowBlueprint::find_node(const NodeId& id) const {
-  auto it = index_.find(id);
-  if (it == index_.end()) {
-    return nullptr;
-  }
-  return &nodes_[it->second];
-}
-
-void WorkflowBlueprint::validate_acyclic() const {
-  (void)topological_order();
-}
-
-std::vector<NodeId> WorkflowBlueprint::topological_order() const {
-  std::unordered_map<NodeId, int> indegree;
-  std::unordered_map<NodeId, std::vector<NodeId>> adj;
-
-  for (const auto& n : nodes_) {
-    indegree[n.id] = 0;
-  }
+std::vector<const edge_def*> workflow_blueprint::outgoing_edges(std::size_t from_id) const {
+  std::vector<const edge_def*> result;
   for (const auto& e : edges_) {
-    adj[e.from].push_back(e.to);
-    indegree[e.to]++;
+    if (e.from == from_id) result.push_back(&e);
   }
+  return result;
+}
 
-  std::queue<NodeId> q;
-  for (const auto& n : nodes_) {
-    if (indegree[n.id] == 0) {
-      q.push(n.id);
-    }
+std::vector<const edge_def*> workflow_blueprint::incoming_edges(std::size_t to_id) const {
+  std::vector<const edge_def*> result;
+  for (const auto& e : edges_) {
+    if (e.to == to_id) result.push_back(&e);
   }
+  return result;
+}
 
-  std::vector<NodeId> order;
+const std::vector<edge_def>& workflow_blueprint::edges() const noexcept { return edges_; }
+
+std::string workflow_blueprint::validate() const {
+  for (const auto& e : edges_) {
+    if (!has_node(e.from)) return "edge from=" + std::to_string(e.from) + ": source node not found";
+    if (!has_node(e.to)) return "edge to=" + std::to_string(e.to) + ": destination node not found";
+  }
+  std::unordered_map<std::size_t, int> in_degree;
+  for (const auto& [id, _] : nodes_) in_degree[id] = 0;
+  for (const auto& e : edges_) in_degree[e.to]++;
+  std::queue<std::size_t> q;
+  for (const auto& [id, deg] : in_degree)
+    if (deg == 0) q.push(id);
+  std::size_t visited = 0;
   while (!q.empty()) {
-    NodeId u = q.front();
+    auto cur = q.front();
     q.pop();
-    order.push_back(u);
-    for (const NodeId& v : adj[u]) {
-      indegree[v]--;
-      if (indegree[v] == 0) {
-        q.push(v);
-      }
+    visited++;
+    auto it = adjacency_.find(cur);
+    if (it != adjacency_.end()) {
+      for (auto succ : it->second)
+        if (--in_degree[succ] == 0) q.push(succ);
     }
   }
+  if (visited != nodes_.size())
+    return "cycle detected: visited " + std::to_string(visited) + "/" + std::to_string(nodes_.size()) + " nodes";
+  return "";
+}
 
-  if (order.size() != nodes_.size()) {
-    throw std::runtime_error("workflow blueprint has a cycle or disconnected nodes");
+bool workflow_blueprint::is_valid() const { return validate().empty(); }
+
+std::vector<std::size_t> workflow_blueprint::topological_order() const {
+  std::unordered_map<std::size_t, int> in_degree;
+  for (const auto& [id, _] : nodes_) in_degree[id] = 0;
+  for (const auto& e : edges_) in_degree[e.to]++;
+  std::queue<std::size_t> q;
+  for (const auto& [id, deg] : in_degree)
+    if (deg == 0) q.push(id);
+  std::vector<std::size_t> order;
+  order.reserve(nodes_.size());
+  while (!q.empty()) {
+    auto cur = q.front();
+    q.pop();
+    order.push_back(cur);
+    auto it = adjacency_.find(cur);
+    if (it != adjacency_.end())
+      for (auto succ : it->second)
+        if (--in_degree[succ] == 0) q.push(succ);
   }
   return order;
 }
 
-}  // namespace tf
+std::vector<std::size_t> workflow_blueprint::predecessors(std::size_t node_id) const {
+  auto it = reverse_adj_.find(node_id);
+  return it != reverse_adj_.end() ? it->second : std::vector<std::size_t>{};
+}
+
+std::vector<std::size_t> workflow_blueprint::successors(std::size_t node_id) const {
+  auto it = adjacency_.find(node_id);
+  return it != adjacency_.end() ? it->second : std::vector<std::size_t>{};
+}
+
+std::vector<std::size_t> workflow_blueprint::root_nodes() const {
+  std::vector<std::size_t> roots;
+  for (const auto& [id, _] : nodes_)
+    if (predecessors(id).empty()) roots.push_back(id);
+  return roots;
+}
+
+std::vector<std::size_t> workflow_blueprint::leaf_nodes() const {
+  std::vector<std::size_t> leaves;
+  for (const auto& [id, _] : nodes_)
+    if (successors(id).empty()) leaves.push_back(id);
+  return leaves;
+}
+
+void workflow_blueprint::rebuild_adjacency() {
+  adjacency_.clear();
+  reverse_adj_.clear();
+  for (const auto& [id, _] : nodes_) {
+    adjacency_[id] = {};
+    reverse_adj_[id] = {};
+  }
+  for (const auto& e : edges_) {
+    adjacency_[e.from].push_back(e.to);
+    reverse_adj_[e.to].push_back(e.from);
+  }
+}
+
+}  // namespace taskflow::workflow

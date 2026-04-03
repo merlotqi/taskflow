@@ -1,15 +1,20 @@
 #pragma once
 
-#include <taskflow/core/types.hpp>
-#include <taskflow/engine/execution.hpp>
-
+#include <cstddef>
 #include <vector>
 
-namespace tf {
+namespace taskflow::engine {
+class workflow_execution;
+}
 
-class Scheduler {
+namespace taskflow::engine {
+
+class scheduler {
  public:
-  std::vector<NodeId> ready_nodes(const WorkflowExecution& ex) const;
+  [[nodiscard]] static std::vector<std::size_t> ready_nodes(const workflow_execution& execution);
+  [[nodiscard]] static std::size_t pick_next(const workflow_execution& execution);
+  [[nodiscard]] static std::vector<std::size_t> ready_nodes_ordered(const workflow_execution& execution);
+  [[nodiscard]] static bool has_pending(const workflow_execution& execution);
 };
 
-}  // namespace tf
+}  // namespace taskflow::engine

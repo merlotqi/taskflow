@@ -1,113 +1,98 @@
-#include <taskflow/workflow/serializer.hpp>
+#include "taskflow/workflow/serializer.hpp"
 
-#include <stdexcept>
+#include <nlohmann/json.hpp>
 
-namespace tf {
+namespace taskflow::workflow {
 
-namespace {
+using json = nlohmann::json;
 
-const char* task_state_str(TaskState s) {
-  switch (s) {
-    case TaskState::Pending:
-      return "pending";
-    case TaskState::Running:
-      return "running";
-    case TaskState::Success:
-      return "success";
-    case TaskState::Failed:
-      return "failed";
-  }
-  return "pending";
-}
+std::string serializer::to_json(const workflow_blueprint& bp) {
+  json j;
 
-TaskState task_state_from_str(const std::string& s) {
-  if (s == "pending") {
-    return TaskState::Pending;
-  }
-  if (s == "running") {
-    return TaskState::Running;
-  }
-  if (s == "success") {
-    return TaskState::Success;
-  }
-  if (s == "failed") {
-    return TaskState::Failed;
-  }
-  throw std::invalid_argument("unknown task state: " + s);
-}
-
-}  // namespace
-
-nlohmann::json blueprint_to_json(const WorkflowBlueprint& bp) {
-  nlohmann::json j;
-  j["nodes"] = nlohmann::json::array();
-  for (const auto& n : bp.nodes()) {
-    j["nodes"].push_back({{"id", n.id}, {"task_type", n.task_type}, {"max_retries", n.max_retries}});
-  }
-  j["edges"] = nlohmann::json::array();
-  for (const auto& e : bp.edges()) {
-    j["edges"].push_back({{"from", e.from}, {"to", e.to}, {"condition", e.condition}});
-  }
-  return j;
-}
-
-WorkflowBlueprint blueprint_from_json(const nlohmann::json& j) {
-  WorkflowBlueprint bp;
-  for (const auto& item : j.at("nodes")) {
-    NodeDef n;
-    n.id = item.at("id").get<std::string>();
-    n.task_type = item.at("task_type").get<std::string>();
-    n.max_retries = item.value("max_retries", 0);
-    bp.add_node(std::move(n));
-  }
-  for (const auto& item : j.at("edges")) {
-    EdgeDef e;
-    e.from = item.at("from").get<std::string>();
-    e.to = item.at("to").get<std::string>();
-    e.condition = item.value("condition", std::string{});
-    bp.add_edge(std::move(e));
-  }
-  return bp;
-}
-
-std::string blueprint_to_string(const WorkflowBlueprint& bp) {
-  return blueprint_to_json(bp).dump();
-}
-
-WorkflowBlueprint blueprint_from_string(const std::string& s) {
-  return blueprint_from_json(nlohmann::json::parse(s));
-}
-
-nlohmann::json execution_to_json(const WorkflowExecution& ex) {
-  nlohmann::json j;
-  j["id"] = ex.id;
-  j["blueprint"] = blueprint_to_json(ex.blueprint);
-  j["node_states"] = nlohmann::json::object();
-  for (const auto& [nid, st] : ex.node_states) {
-    j["node_states"][nid] = task_state_str(st);
-  }
-  j["context"] = ex.context.bus();
-  j["retry_count"] = nlohmann::json::object();
-  for (const auto& [nid, c] : ex.retry_count) {
-    j["retry_count"][nid] = c;
-  }
-  return j;
-}
-
-void execution_from_json(const nlohmann::json& j, WorkflowExecution& ex) {
-  ex.id = j.at("id").get<std::string>();
-  ex.blueprint = blueprint_from_json(j.at("blueprint"));
-  ex.node_states.clear();
-  for (auto it = j.at("node_states").begin(); it != j.at("node_states").end(); ++it) {
-    ex.node_states[it.key()] = task_state_from_str(it.value().get<std::string>());
-  }
-  ex.context.bus() = j.at("context");
-  ex.retry_count.clear();
-  if (j.contains("retry_count")) {
-    for (auto it = j.at("retry_count").begin(); it != j.at("retry_count").end(); ++it) {
-      ex.retry_count[it.key()] = it.value().get<int>();
+  // Serialize nodes
+  j["nodes"] = json::array();
+  for (const auto& [id, node] : bp.nodes()) {
+    json node_json;
+    node_json["id"] = node.id;
+    node_json["task_type"] = node.task_type;
+    if (node.label) {
+      node_json["label"] = *node.label;
     }
+    if (node.retry) {
+      node_json["retry"] = {{"max_attempts", node.retry->max_attempts},
+                            {"initial_delay_ms", node.retry->initial_delay_ms},
+                            {"backoff_multiplier", node.retry->backoff_multiplier}};
+    }
+    if (!node.tags.empty()) {
+      node_json["tags"] = node.tags;
+    }
+    j["nodes"].push_back(node_json);
+  }
+
+  // Serialize edges (structural only; edge_def::condition is std::function and is omitted)
+  j["edges"] = json::array();
+  for (const auto& edge : bp.edges()) {
+    json edge_json;
+    edge_json["from"] = edge.from;
+    edge_json["to"] = edge.to;
+    j["edges"].push_back(edge_json);
+  }
+
+  return j.dump(2);
+}
+
+std::optional<workflow_blueprint> serializer::from_json(const std::string& json_str) {
+  try {
+    json j = json::parse(json_str);
+    workflow_blueprint bp;
+
+    // Deserialize nodes
+    if (j.contains("nodes") && j["nodes"].is_array()) {
+      for (const auto& node_json : j["nodes"]) {
+        node_def node;
+        node.id = node_json["id"];
+        node.task_type = node_json["task_type"];
+        if (node_json.contains("label")) {
+          node.label = node_json["label"];
+        }
+        if (node_json.contains("retry")) {
+          core::retry_policy retry;
+          retry.max_attempts = node_json["retry"]["max_attempts"];
+          retry.initial_delay_ms = node_json["retry"]["initial_delay_ms"];
+          retry.backoff_multiplier = node_json["retry"]["backoff_multiplier"];
+          node.retry = retry;
+        }
+        if (node_json.contains("tags")) {
+          node.tags = node_json["tags"];
+        }
+        bp.add_node(std::move(node));
+      }
+    }
+
+    // Deserialize edges
+    if (j.contains("edges") && j["edges"].is_array()) {
+      for (const auto& edge_json : j["edges"]) {
+        edge_def edge;
+        edge.from = edge_json["from"];
+        edge.to = edge_json["to"];
+        bp.add_edge(std::move(edge));
+      }
+    }
+
+    return bp;
+  } catch (const json::exception&) {
+    return std::nullopt;
   }
 }
 
-}  // namespace tf
+std::vector<std::uint8_t> serializer::to_binary(const workflow_blueprint& bp) {
+  std::string json_str = to_json(bp);
+  return std::vector<std::uint8_t>(json_str.begin(), json_str.end());
+}
+
+std::optional<workflow_blueprint> serializer::from_binary(const std::vector<std::uint8_t>& data) {
+  std::string json_str(data.begin(), data.end());
+  return from_json(json_str);
+}
+
+}  // namespace taskflow::workflow

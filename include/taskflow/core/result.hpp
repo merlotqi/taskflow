@@ -1,15 +1,24 @@
 #pragma once
 
-#include <optional>
+#include <cstddef>
+#include <functional>
 #include <string>
 
-namespace tf {
+namespace taskflow::core {
 
-enum class ResultKind { Ok, Err };
+struct result_locator {
+  std::size_t node_id;
+  std::string key;
 
-struct ResultPayload {
-  ResultKind kind{ResultKind::Ok};
-  std::string message;
+  bool operator==(const result_locator& other) const { return node_id == other.node_id && key == other.key; }
+
+  bool operator!=(const result_locator& other) const { return !(*this == other); }
 };
 
-}  // namespace tf
+struct result_locator_hash {
+  std::size_t operator()(const result_locator& loc) const {
+    return std::hash<std::size_t>{}(loc.node_id) ^ (std::hash<std::string>{}(loc.key) << 1);
+  }
+};
+
+}  // namespace taskflow::core

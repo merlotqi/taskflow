@@ -1,29 +1,29 @@
 #pragma once
 
-#include <taskflow/core/types.hpp>
+#include <cstdint>
+#include <string_view>
 
-#include <string>
+#include "taskflow/core/types.hpp"
 
-namespace tf {
+namespace taskflow::observer {
 
-class Observer {
+class observer {
  public:
-  virtual ~Observer() = default;
+  virtual ~observer() = default;
 
-  virtual void on_task_start(const ExecutionId& exec, const NodeId& node) {
-    (void)exec;
-    (void)node;
-  }
-  virtual void on_task_complete(const ExecutionId& exec, const NodeId& node) {
-    (void)exec;
-    (void)node;
-  }
-  virtual void on_task_fail(const ExecutionId& exec, const NodeId& node,
-                            const std::string& message) {
-    (void)exec;
-    (void)node;
-    (void)message;
-  }
+  /// Called when a node becomes ready to run (before submit). Default: no-op.
+  virtual void on_node_ready(std::size_t /*exec_id*/, std::size_t /*node_id*/) noexcept {}
+
+  virtual void on_task_start(std::size_t exec_id, std::size_t node_id, std::string_view task_type,
+                             std::int32_t attempt) noexcept = 0;
+
+  virtual void on_task_complete(std::size_t exec_id, std::size_t node_id, std::string_view task_type,
+                                std::int64_t duration_ms) noexcept = 0;
+
+  virtual void on_task_fail(std::size_t exec_id, std::size_t node_id, std::string_view task_type,
+                            std::string_view error, std::int64_t duration_ms) noexcept = 0;
+
+  virtual void on_workflow_complete(std::size_t exec_id, core::task_state state, std::int64_t duration_ms) noexcept = 0;
 };
 
-}  // namespace tf
+}  // namespace taskflow::observer

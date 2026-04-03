@@ -1,33 +1,33 @@
-#include <taskflow/taskflow.hpp>
-
 #include <benchmark/benchmark.h>
 
-#include <memory>
 #include <string>
+#include <taskflow/taskflow.hpp>
 
 namespace {
 
-struct NoopTask : tf::TaskBase {
-  void execute(tf::TaskCtx&) override {}
+struct NoopTask {
+  taskflow::core::task_state operator()(taskflow::core::task_ctx&) { return taskflow::core::task_state::success; }
 };
 
 void BM_OrchestratorLinearChain(benchmark::State& state) {
   const int n = static_cast<int>(state.range(0));
-  tf::Orchestrator orch;
-  orch.register_task_type("noop", [] { return tf::TaskPtr{std::make_unique<NoopTask>()}; });
+  taskflow::engine::orchestrator orch;
+  orch.register_task<NoopTask>("noop");
 
-  tf::WorkflowBlueprint bp;
+  taskflow::workflow::workflow_blueprint bp;
   for (int i = 0; i < n; ++i) {
-    bp.add_node({std::string("n") + std::to_string(i), "noop"});
+    bp.add_node(taskflow::workflow::node_def{static_cast<std::size_t>(i), "noop"});
     if (i > 0) {
-      bp.add_edge({std::string("n") + std::to_string(i - 1), std::string("n") + std::to_string(i)});
+      bp.add_edge(taskflow::workflow::edge_def{static_cast<std::size_t>(i - 1), static_cast<std::size_t>(i)});
     }
   }
 
+  orch.register_blueprint(1, std::move(bp));
+
   for (auto _ : state) {
-    tf::ExecutionId id = orch.create_execution(bp);
-    orch.run_sync(id);
-    benchmark::DoNotOptimize(id);
+    auto [exec_id, result] = orch.run_sync_from_blueprint(1);
+    benchmark::DoNotOptimize(exec_id);
+    benchmark::DoNotOptimize(result);
   }
 }
 

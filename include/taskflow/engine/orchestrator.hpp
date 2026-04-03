@@ -1,43 +1,94 @@
 #pragma once
 
-#include <taskflow/core/types.hpp>
-#include <taskflow/engine/execution.hpp>
-#include <taskflow/engine/executor.hpp>
-#include <taskflow/engine/registry.hpp>
-#include <taskflow/engine/scheduler.hpp>
-#include <taskflow/observer/observer.hpp>
-#include <taskflow/storage/storage.hpp>
-#include <taskflow/workflow/blueprint.hpp>
-
+#include <atomic>
+#include <cstddef>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
-namespace tf {
+#include "taskflow/engine/execution.hpp"
+#include "taskflow/engine/parallel_executor.hpp"
+#include "taskflow/engine/registry.hpp"
+#include "taskflow/integration/event_hooks.hpp"
 
-class Orchestrator {
+namespace taskflow::core {
+class audit_log;
+class result_storage;
+class state_storage;
+}  // namespace taskflow::core
+
+namespace taskflow::observer {
+class observer;
+}
+
+namespace taskflow::engine {
+
+class orchestrator {
  public:
-  void register_task_type(std::string type, TaskFactoryFn factory);
+  orchestrator();
+  explicit orchestrator(std::unique_ptr<parallel_executor> executor);
+  explicit orchestrator(std::unique_ptr<core::state_storage> storage);
+  explicit orchestrator(std::unique_ptr<core::result_storage> result_storage);
+  orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::state_storage> storage);
+  orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::result_storage> result_storage);
 
-  void set_storage(std::shared_ptr<StateStorage> storage);
+  orchestrator(const orchestrator&) = delete;
+  orchestrator& operator=(const orchestrator&) = delete;
+  orchestrator(orchestrator&&) noexcept = default;
+  orchestrator& operator=(orchestrator&&) noexcept = default;
 
-  void add_observer(std::shared_ptr<Observer> observer);
+  void register_task(std::string type_name, core::task_factory factory);
+  template <typename T, std::enable_if_t<core::is_task_v<T>, int> = 0>
+  void register_task(std::string type_name) {
+    registry_.register_task<T>(std::move(type_name));
+  }
+  [[nodiscard]] const task_registry& registry() const noexcept;
 
-  ExecutionId create_execution(const WorkflowBlueprint& blueprint);
+  void set_audit_log(std::shared_ptr<core::audit_log> log);
+  void set_event_hooks(integration::workflow_event_hooks hooks);
 
-  void run_sync(const ExecutionId& id);
+  void register_blueprint(std::size_t id, workflow::workflow_blueprint bp);
+  void register_blueprint(std::string_view name, workflow::workflow_blueprint bp);
+  [[nodiscard]] const workflow::workflow_blueprint* get_blueprint(std::size_t id) const noexcept;
+  [[nodiscard]] const workflow::workflow_blueprint* get_blueprint(std::string_view name) const noexcept;
+  [[nodiscard]] bool has_blueprint(std::size_t id) const noexcept;
+  [[nodiscard]] bool has_blueprint(std::string_view name) const noexcept;
 
-  const WorkflowExecution* get_execution(const ExecutionId& id) const;
-  WorkflowExecution* get_execution(const ExecutionId& id);
+  std::size_t create_execution(std::size_t blueprint_id);
+  std::size_t create_execution(std::string_view blueprint_name);
+
+  [[nodiscard]] workflow_execution* get_execution(std::size_t id) noexcept;
+  [[nodiscard]] const workflow_execution* get_execution(std::size_t id) const noexcept;
+
+  void add_observer(observer::observer* obs);
+  void remove_observer(observer::observer* obs);
+
+  [[nodiscard]] core::task_state run_sync(std::size_t execution_id, bool stop_on_first_failure = true);
+  std::pair<std::size_t, core::task_state> run_sync_from_blueprint(std::size_t blueprint_id,
+                                                                   bool stop_on_first_failure = true);
+
+  [[nodiscard]] parallel_executor* executor() noexcept;
+  [[nodiscard]] const parallel_executor* executor() const noexcept;
 
  private:
-  TaskRegistry registry_;
-  Scheduler scheduler_;
-  Executor executor_;
-  std::unordered_map<ExecutionId, WorkflowExecution> executions_;
-  std::shared_ptr<StateStorage> storage_;
-  std::vector<std::shared_ptr<Observer>> observers_;
-  std::uint64_t next_exec_{0};
+  task_registry registry_;
+  std::unordered_map<std::size_t, workflow::workflow_blueprint> blueprints_;
+  std::unordered_map<std::string, workflow::workflow_blueprint> named_blueprints_;
+  std::unordered_map<std::size_t, workflow_execution> executions_;
+  std::vector<observer::observer*> observers_;
+  std::unique_ptr<core::state_storage> storage_;
+  std::unique_ptr<core::result_storage> result_storage_;
+  std::unique_ptr<parallel_executor> executor_;
+  std::shared_ptr<core::audit_log> audit_log_;
+  std::optional<integration::workflow_event_hooks> event_hooks_;
+
+  std::atomic<std::size_t> next_exec_id_{0};
+
+  std::size_t create_execution_from_blueprint(const workflow::workflow_blueprint& src);
+  std::size_t allocate_exec_id();
 };
 
-}  // namespace tf
+}  // namespace taskflow::engine

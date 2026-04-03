@@ -1,20 +1,26 @@
 #pragma once
 
-#include <taskflow/engine/execution.hpp>
-#include <taskflow/workflow/blueprint.hpp>
-
-#include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
+#include <vector>
 
-namespace tf {
+#include "taskflow/workflow/blueprint.hpp"
 
-nlohmann::json blueprint_to_json(const WorkflowBlueprint& bp);
-WorkflowBlueprint blueprint_from_json(const nlohmann::json& j);
+namespace taskflow::workflow {
 
-std::string blueprint_to_string(const WorkflowBlueprint& bp);
-WorkflowBlueprint blueprint_from_string(const std::string& s);
+class serializer {
+ public:
+  // Serialize to JSON string
+  [[nodiscard]] static std::string to_json(const workflow_blueprint& bp);
 
-nlohmann::json execution_to_json(const WorkflowExecution& ex);
-void execution_from_json(const nlohmann::json& j, WorkflowExecution& ex);
+  // Deserialize from JSON string
+  [[nodiscard]] static std::optional<workflow_blueprint> from_json(const std::string& json);
 
-}  // namespace tf
+  // Serialize to binary
+  [[nodiscard]] static std::vector<std::uint8_t> to_binary(const workflow_blueprint& bp);
+
+  // Deserialize from binary
+  [[nodiscard]] static std::optional<workflow_blueprint> from_binary(const std::vector<std::uint8_t>& data);
+};
+
+}  // namespace taskflow::workflow

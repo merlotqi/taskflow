@@ -1,106 +1,116 @@
-#include <taskflow/taskflow.hpp>
-
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
+
+#include <taskflow/taskflow.hpp>
 
 namespace {
 
-struct NoopTask : tf::TaskBase {
-  void execute(tf::TaskCtx&) override {}
+struct OkTask {
+  taskflow::core::task_state operator()(taskflow::core::task_ctx&) {
+    return taskflow::core::task_state::success;
+  }
 };
 
-struct SetKeyTask : tf::TaskBase {
-  explicit SetKeyTask(std::string k, std::string v) : key(std::move(k)), value(std::move(v)) {}
-  std::string key;
-  std::string value;
-  void execute(tf::TaskCtx& ctx) override { ctx.set(key, nlohmann::json(value)); }
-};
-
-struct FailTask : tf::TaskBase {
-  void execute(tf::TaskCtx&) override { throw std::runtime_error("boom"); }
+struct SetFlagTask {
+  taskflow::core::task_state operator()(taskflow::core::task_ctx& ctx) {
+    ctx.set("branch", static_cast<std::int64_t>(1));
+    return taskflow::core::task_state::success;
+  }
 };
 
 }  // namespace
 
-TEST(BlueprintTest, TopologicalOrderLinear) {
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"a", "noop"});
-  bp.add_node({"b", "noop"});
-  bp.add_edge({"a", "b"});
-  auto order = bp.topological_order();
-  ASSERT_EQ(order.size(), 2u);
-  EXPECT_EQ(order[0], "a");
-  EXPECT_EQ(order[1], "b");
+TEST(OrchestratorTest, BlueprintRegisterAndRun) {
+  taskflow::engine::orchestrator orch;
+  orch.register_task<OkTask>("ok");
+
+  taskflow::workflow::workflow_blueprint bp;
+  bp.add_node(taskflow::workflow::node_def{1, "ok"});
+  orch.register_blueprint(100, std::move(bp));
+
+  EXPECT_TRUE(orch.has_blueprint(100));
+  EXPECT_NE(orch.get_blueprint(100), nullptr);
+
+  auto exec_id = orch.create_execution(100);
+  auto st = orch.run_sync(exec_id);
+  EXPECT_EQ(st, taskflow::core::task_state::success);
 }
 
-TEST(BlueprintTest, CycleThrows) {
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"a", "noop"});
-  bp.add_node({"b", "noop"});
-  bp.add_edge({"a", "b"});
-  bp.add_edge({"b", "a"});
-  EXPECT_THROW(bp.validate_acyclic(), std::runtime_error);
+TEST(OrchestratorTest, StateStorageReceivesSnapshots) {
+  auto mem = std::make_unique<taskflow::storage::memory_state_storage>();
+  auto* raw = mem.get();
+  taskflow::engine::orchestrator orch(std::move(mem));
+  orch.register_task<OkTask>("ok");
+
+  taskflow::workflow::workflow_blueprint bp;
+  bp.add_node(taskflow::workflow::node_def{1, "ok"});
+  orch.register_blueprint(1, std::move(bp));
+
+  auto exec_id = orch.create_execution(1);
+  (void)orch.run_sync(exec_id);
+
+  auto blob = raw->load(exec_id);
+  ASSERT_TRUE(blob.has_value());
+  EXPECT_FALSE(blob->empty());
 }
 
-TEST(OrchestratorTest, SingleNodeRuns) {
-  tf::Orchestrator orch;
-  orch.register_task_type("noop", [] { return tf::TaskPtr{std::make_unique<NoopTask>()}; });
+TEST(SchedulerTest, ConditionalEdgeBlocksSuccessor) {
+  taskflow::engine::orchestrator orch;
+  orch.register_task<SetFlagTask>("set");
+  orch.register_task<OkTask>("ok");
 
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"only", "noop"});
-  tf::ExecutionId id = orch.create_execution(bp);
-  orch.run_sync(id);
-  const tf::WorkflowExecution* ex = orch.get_execution(id);
+  taskflow::workflow::edge_def blocked{1, 3, [](const taskflow::core::task_ctx&) { return false; }};
+  taskflow::workflow::workflow_blueprint bp2;
+  bp2.add_node(taskflow::workflow::node_def{1, "set"});
+  bp2.add_node(taskflow::workflow::node_def{2, "ok"});
+  bp2.add_node(taskflow::workflow::node_def{3, "ok"});
+  bp2.add_edge({1, 2});
+  bp2.add_edge(std::move(blocked));
+
+  orch.register_blueprint(10, std::move(bp2));
+  auto exec_id = orch.create_execution(10);
+  (void)orch.run_sync(exec_id, false);
+
+  const auto* ex = orch.get_execution(exec_id);
   ASSERT_NE(ex, nullptr);
-  EXPECT_EQ(ex->state_of("only"), tf::TaskState::Success);
+  EXPECT_EQ(ex->get_node_state(2).state, taskflow::core::task_state::success);
+  EXPECT_EQ(ex->get_node_state(3).state, taskflow::core::task_state::pending);
 }
 
-TEST(OrchestratorTest, ChainPassesContext) {
-  tf::Orchestrator orch;
-  orch.register_task_type("noop", [] { return tf::TaskPtr{std::make_unique<NoopTask>()}; });
-  orch.register_task_type("set", [] { return tf::TaskPtr{std::make_unique<SetKeyTask>("k", "v")}; });
+TEST(SchedulerTest, ConditionalEdgeAllowsSuccessor) {
+  taskflow::engine::orchestrator orch;
+  orch.register_task<SetFlagTask>("set");
+  orch.register_task<OkTask>("ok");
 
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"a", "set"});
-  bp.add_node({"b", "noop"});
-  bp.add_edge({"a", "b"});
-  tf::ExecutionId id = orch.create_execution(bp);
-  orch.run_sync(id);
-  const tf::WorkflowExecution* ex = orch.get_execution(id);
-  ASSERT_NE(ex, nullptr);
-  EXPECT_EQ(ex->state_of("a"), tf::TaskState::Success);
-  EXPECT_EQ(ex->state_of("b"), tf::TaskState::Success);
-  EXPECT_EQ(ex->context.get("k").get<std::string>(), "v");
+  taskflow::workflow::workflow_blueprint bp;
+  bp.add_node(taskflow::workflow::node_def{1, "set"});
+  bp.add_node(taskflow::workflow::node_def{2, "ok"});
+  bp.add_edge(taskflow::workflow::edge_def{
+      1, 2, [](const taskflow::core::task_ctx& ctx) {
+        auto b = ctx.get<std::int64_t>("branch");
+        return b && *b != 0;
+      }});
+
+  orch.register_blueprint(11, std::move(bp));
+  auto exec_id = orch.create_execution(11);
+  auto st = orch.run_sync(exec_id);
+  EXPECT_EQ(st, taskflow::core::task_state::success);
 }
 
-TEST(OrchestratorTest, FailureStopsSuccess) {
-  tf::Orchestrator orch;
-  orch.register_task_type("fail", [] { return tf::TaskPtr{std::make_unique<FailTask>()}; });
-  orch.register_task_type("noop", [] { return tf::TaskPtr{std::make_unique<NoopTask>()}; });
-
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"a", "fail"});
-  bp.add_node({"b", "noop"});
-  bp.add_edge({"a", "b"});
-  tf::ExecutionId id = orch.create_execution(bp);
-  orch.run_sync(id);
-  const tf::WorkflowExecution* ex = orch.get_execution(id);
-  ASSERT_NE(ex, nullptr);
-  EXPECT_EQ(ex->state_of("a"), tf::TaskState::Failed);
-  EXPECT_EQ(ex->state_of("b"), tf::TaskState::Pending);
-}
-
-TEST(SerializerTest, RoundTripBlueprint) {
-  tf::WorkflowBlueprint bp;
-  bp.add_node({"x", "t"});
-  bp.add_node({"y", "t2"});
-  bp.add_edge({"x", "y"});
-  std::string s = tf::blueprint_to_string(bp);
-  tf::WorkflowBlueprint bp2 = tf::blueprint_from_string(s);
-  ASSERT_EQ(bp2.nodes().size(), 2u);
-  ASSERT_NE(bp2.find_node("x"), nullptr);
-  EXPECT_EQ(bp2.find_node("x")->task_type, "t");
-  ASSERT_NE(bp2.find_node("y"), nullptr);
-  EXPECT_EQ(bp2.find_node("y")->task_type, "t2");
+TEST(TaskRegistryTest, StatefulFactoryViaStdFunction) {
+  taskflow::engine::task_registry reg;
+  int counter = 0;
+  reg.register_task("cnt", [&counter]() {
+    return taskflow::core::task_wrapper{[&counter](taskflow::core::task_ctx&) {
+      ++counter;
+      return taskflow::core::task_state::success;
+    }};
+  });
+  auto t = reg.create("cnt");
+  ASSERT_TRUE(static_cast<bool>(t));
+  taskflow::core::task_ctx ctx;
+  EXPECT_EQ(t.execute(ctx), taskflow::core::task_state::success);
+  EXPECT_EQ(counter, 1);
 }

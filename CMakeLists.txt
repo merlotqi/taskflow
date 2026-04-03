@@ -1,117 +1,163 @@
-cmake_minimum_required(VERSION 3.14)
-project(TaskFlow VERSION 2.0.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.14...3.20)
+project(TaskFlow VERSION 2.0.0 LANGUAGES CXX
+  DESCRIPTION "Lightweight C++ task orchestration engine"
+  HOMEPAGE_URL "https://github.com/merlotqi/taskflow"
+)
 
-set(CMAKE_CXX_STANDARD 17)
+enable_testing()
+
+# Prevent in-source builds
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR "In-source builds are not allowed. Please use a separate build directory.")
+endif()
+
+# Build type configuration
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+  "Debug" "Release" "MinSizeRel" "RelWithDebInfo"
+)
+
+# C++ standard (C++20 optional for concepts mirror)
+option(TASKFLOW_CXX20 "Build as C++20 (enables task_callable concept on task_wrapper)" OFF)
+if(TASKFLOW_CXX20)
+  set(CMAKE_CXX_STANDARD 20)
+else()
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Threads REQUIRED)
+# Compiler options
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-g -O0)
+  endif()
+elseif(MSVC)
+  add_compile_options(/W4)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+endif()
 
-find_package(nlohmann_json QUIET)
+# Find dependencies
+find_package(Threads REQUIRED)
+find_package(nlohmann_json CONFIG QUIET)
 if(NOT nlohmann_json_FOUND)
-  message(STATUS "nlohmann_json not found, fetching from GitHub...")
+  message(STATUS "nlohmann_json not found, fetching via FetchContent...")
   include(FetchContent)
   FetchContent_Declare(
     json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.2
+    GIT_TAG v3.11.3
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   )
   FetchContent_MakeAvailable(json)
 endif()
 
-add_library(taskflow_core
-  src/workflow/blueprint.cpp
-  src/workflow/serializer.cpp
-  src/engine/execution.cpp
-  src/engine/registry.cpp
-  src/engine/scheduler.cpp
-  src/engine/executor.cpp
-  src/engine/orchestrator.cpp
-  src/storage/memory_storage.cpp
-)
+option(TASKFLOW_WITH_SQLITE "Build optional SQLite state_storage backend" OFF)
+if(TASKFLOW_WITH_SQLITE)
+  find_package(SQLite3 REQUIRED)
+endif()
 
-add_library(TaskFlow::taskflow_core ALIAS taskflow_core)
-add_library(TaskFlow::TaskFlow ALIAS taskflow_core)
-
-target_include_directories(taskflow_core PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-
-target_link_libraries(taskflow_core PUBLIC
-  Threads::Threads
-  nlohmann_json::nlohmann_json
-)
-
+# Options
 option(TASKFLOW_BUILD_TESTS "Build unit tests" ON)
 option(TASKFLOW_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(TASKFLOW_BUILD_EXAMPLES "Build examples" ON)
+option(TASKFLOW_INSTALL "Generate install target" ON)
 
+# Core library
+add_subdirectory(src)
+
+# Set version properties
+set_target_properties(taskflow PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+# Optional modules
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_TESTS)
-  include(FetchContent)
-  FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-  )
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(googletest)
-  enable_testing()
-  add_executable(taskflow_tests
-    tests/orchestrator_test.cpp
-  )
-  target_link_libraries(taskflow_tests PRIVATE taskflow_core GTest::gtest_main)
-  include(GoogleTest)
-  gtest_discover_tests(taskflow_tests)
+  add_subdirectory(tests)
 endif()
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_BENCHMARKS)
-  include(FetchContent)
-  FetchContent_Declare(
-    googlebenchmark
-    URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
-  )
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-  FetchContent_MakeAvailable(googlebenchmark)
-  add_executable(taskflow_benchmark
-    benchmarks/orchestrator_benchmark.cpp
-  )
-  target_link_libraries(taskflow_benchmark PRIVATE taskflow_core benchmark::benchmark_main)
+  add_subdirectory(benchmarks)
 endif()
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_EXAMPLES)
-  add_executable(minimal_orchestrator examples/minimal_orchestrator.cpp)
-  target_link_libraries(minimal_orchestrator PRIVATE taskflow_core)
+  add_subdirectory(examples)
 endif()
 
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
+# Installation
+if(TASKFLOW_INSTALL)
+  include(GNUInstallDirs)
+  include(CMakePackageConfigHelpers)
 
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(TARGETS taskflow_core
-  EXPORT TaskFlowTargets
-)
+  install(TARGETS taskflow
+    EXPORT TaskFlowTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
 
-install(EXPORT TaskFlowTargets
-  FILE TaskFlowTargets.cmake
-  NAMESPACE TaskFlow::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
+  install(EXPORT TaskFlowTargets
+    FILE TaskFlowTargets.cmake
+    NAMESPACE TaskFlow::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+  )
 
-configure_package_config_file(
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowConfig.cmake.in"
-  "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
+  configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/TaskFlowConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+  )
 
-write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
-  VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion
-)
+  write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
 
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
-)
+  # pkg-config support
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/taskflow.pc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/taskflow.pc"
+    @ONLY
+  )
+
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/TaskFlowConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TaskFlow
+  )
+
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/taskflow.pc"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+  )
+
+  # Uninstall target
+  if(NOT TARGET uninstall)
+    configure_file(
+      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
+      "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+      IMMEDIATE @ONLY
+    )
+    add_custom_target(uninstall
+      COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake
+      COMMENT "Uninstalling TaskFlow"
+    )
+  endif()
+endif()
+
+# CPack support
+set(CPACK_PACKAGE_NAME "taskflow")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT "merlotqi")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
+set(CPACK_GENERATOR "TGZ;ZIP")
+include(CPack)
+

@@ -1,21 +1,26 @@
-#include <taskflow/engine/registry.hpp>
+#include "taskflow/engine/registry.hpp"
 
-namespace tf {
+namespace taskflow::engine {
 
-void TaskRegistry::register_type(std::string type, TaskFactoryFn factory) {
-  factories_[std::move(type)] = std::move(factory);
+void task_registry::register_task(std::string type_name, core::task_factory factory) {
+  factories_[std::move(type_name)] = std::move(factory);
 }
 
-TaskPtr TaskRegistry::create(const std::string& type) const {
-  auto it = factories_.find(type);
-  if (it == factories_.end()) {
-    throw std::runtime_error("unknown task type: " + type);
-  }
+core::task_wrapper task_registry::create(const std::string& type_name) const {
+  auto it = factories_.find(type_name);
+  if (it == factories_.end() || !it->second) return core::task_wrapper{};
   return it->second();
 }
 
-bool TaskRegistry::contains(const std::string& type) const {
-  return factories_.count(type) != 0;
+bool task_registry::has_task(const std::string& type_name) const noexcept {
+  return factories_.find(type_name) != factories_.end();
 }
 
-}  // namespace tf
+std::vector<std::string> task_registry::registered_types() const {
+  std::vector<std::string> types;
+  types.reserve(factories_.size());
+  for (const auto& [name, _] : factories_) types.push_back(name);
+  return types;
+}
+
+}  // namespace taskflow::engine
