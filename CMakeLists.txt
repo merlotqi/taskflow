@@ -58,7 +58,7 @@ endif()
 
 option(TASKFLOW_WITH_SQLITE "Build optional SQLite state_storage backend" ON)
 if(TASKFLOW_WITH_SQLITE)
-  find_package(SQLite3 3.25 REQUIRED)
+  find_package(SQLite3 REQUIRED)
   message(STATUS "SQLite3 found: ${SQLite3_VERSION}")
   message(STATUS "SQLite3 include dir: ${SQLite3_INCLUDE_DIRS}")
 endif()
@@ -79,15 +79,15 @@ set_target_properties(taskflow PROPERTIES
 )
 
 # Optional modules
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_TESTS)
+if(TASKFLOW_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_BENCHMARKS)
+if(TASKFLOW_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks)
 endif()
 
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND TASKFLOW_BUILD_EXAMPLES)
+if(TASKFLOW_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 

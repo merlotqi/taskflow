@@ -13,6 +13,9 @@ add_executable(taskflow_benchmark
 )
 
 target_link_libraries(taskflow_benchmark PRIVATE taskflow benchmark::benchmark_main)
+if(TASKFLOW_WITH_SQLITE)
+  target_link_libraries(taskflow_benchmark PRIVATE SQLite::SQLite3)
+endif()
 
 # Utility target to run all benchmarks
 add_custom_target(taskflow_run_benchmarks

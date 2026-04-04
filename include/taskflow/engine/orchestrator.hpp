@@ -36,6 +36,9 @@ class orchestrator {
   explicit orchestrator(std::unique_ptr<core::result_storage> result_storage);
   orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::state_storage> storage);
   orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::result_storage> result_storage);
+  /// Optional state persistence plus result_storage (either pointer may be null).
+  orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::state_storage> storage,
+               std::unique_ptr<core::result_storage> result_storage);
 
   orchestrator(const orchestrator&) = delete;
   orchestrator& operator=(const orchestrator&) = delete;

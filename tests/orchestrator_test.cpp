@@ -56,7 +56,7 @@ TEST(OrchestratorTest, StateStorageReceivesSnapshots) {
   EXPECT_FALSE(blob->empty());
 }
 
-TEST(SchedulerTest, ConditionalEdgeBlocksSuccessor) {
+TEST(OrchestratorSchedulerTest, ConditionalEdgeBlocksSuccessor) {
   taskflow::engine::orchestrator orch;
   orch.register_task<SetFlagTask>("set");
   orch.register_task<OkTask>("ok");
@@ -79,7 +79,7 @@ TEST(SchedulerTest, ConditionalEdgeBlocksSuccessor) {
   EXPECT_EQ(ex->get_node_state(3).state, taskflow::core::task_state::pending);
 }
 
-TEST(SchedulerTest, ConditionalEdgeAllowsSuccessor) {
+TEST(OrchestratorSchedulerTest, ConditionalEdgeAllowsSuccessor) {
   taskflow::engine::orchestrator orch;
   orch.register_task<SetFlagTask>("set");
   orch.register_task<OkTask>("ok");
@@ -99,7 +99,7 @@ TEST(SchedulerTest, ConditionalEdgeAllowsSuccessor) {
   EXPECT_EQ(st, taskflow::core::task_state::success);
 }
 
-TEST(TaskRegistryTest, StatefulFactoryViaStdFunction) {
+TEST(RegistryFactoryTest, StatefulFactoryViaStdFunction) {
   taskflow::engine::task_registry reg;
   int counter = 0;
   reg.register_task("cnt", [&counter]() {

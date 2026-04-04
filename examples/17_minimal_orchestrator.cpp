@@ -1,12 +1,30 @@
+/**
+ * Minimal orchestrator example
+ * Demonstrates basic workflow orchestration with task results
+ *
+ * This example shows:
+ *  - How to create and register tasks with the orchestrator
+ *  - Building a simple DAG workflow with dependencies
+ *  - Using task results and data passing between tasks
+ *  - Observer pattern for logging workflow events
+ *  - Retrieving execution results and context data
+ *
+ * Key concepts:
+ *  - Tasks can return results via ctx.set() and ctx.set_result()
+ *  - Data is passed through the task context (ctx)
+ *  - Observers can monitor workflow events (start, complete, fail)
+ *  - Execution results are available after workflow completion
+ */
+
 #include <chrono>
 #include <iostream>
 #include <taskflow/taskflow.hpp>
-
 struct task_result {
   std::string message;
   int code = 0;
 };
 
+// Helper functions for task result serialization
 std::any to_task_value(const task_result& result) {
   std::unordered_map<std::string, std::any> map;
   map["message"] = result.message;
@@ -24,7 +42,6 @@ bool from_task_value(const std::any& any_val, task_result& result) {
     return false;
   }
 }
-
 // --- A simple task that returns a result on the data bus ---
 struct print_task {
   static constexpr std::string_view name = "print";
@@ -47,7 +64,6 @@ struct print_task {
     return taskflow::core::task_state::success;
   }
 };
-
 // --- Observer: logs events to stdout ---
 class console_observer : public taskflow::obs::observer {
  public:

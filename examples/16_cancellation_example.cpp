@@ -1,3 +1,43 @@
+/**
+ * Cancellation token example
+ * Demonstrates workflow cancellation and task interruption
+ *
+ * This example shows:
+ *  - How to cancel running workflows using cancellation tokens
+ *  - Task-level cancellation detection and graceful shutdown
+ *  - Progress reporting during long-running operations
+ *  - Asynchronous workflow execution with cancellation support
+ *  - Checking cancellation status in both long and short tasks
+ *
+ * Key concepts:
+ *  - Cancellation tokens are checked periodically by tasks
+ *  - Tasks should check ctx.is_cancelled() to detect cancellation
+ *  - Cancelled tasks return task_state::cancelled
+ *  - Workflow execution can be cancelled at any time
+ */
+
+#include <chrono>
+#include <iostream>
+#include <taskflow/taskflow.hpp>
+#include <thread>
+/**
+ * Cancellation token example
+ * Demonstrates workflow cancellation and task interruption
+ *
+ * This example shows:
+ *  - How to cancel running workflows using cancellation tokens
+ *  - Task-level cancellation detection and graceful shutdown
+ *  - Progress reporting during long-running operations
+ *  - Asynchronous workflow execution with cancellation support
+ *  - Checking cancellation status in both long and short tasks
+ *
+ * Key concepts:
+ *  - Cancellation tokens are checked periodically by tasks
+ *  - Tasks should check ctx.is_cancelled() to detect cancellation
+ *  - Cancelled tasks return task_state::cancelled
+ *  - Workflow execution can be cancelled at any time
+ */
+
 #include <chrono>
 #include <iostream>
 #include <taskflow/taskflow.hpp>
@@ -59,7 +99,6 @@ int main() {
   taskflow::engine::orchestrator orch;
   orch.register_task<long_running_task>("long_running");
   orch.register_task<fast_task>("fast");
-
   // Build workflow: one long-running task with two fast tasks in parallel
   taskflow::workflow::workflow_blueprint bp;
   bp.add_node(taskflow::workflow::node_def{1, "long_running"});  // Long-running task

@@ -50,6 +50,15 @@ orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor,
   if (!executor_) executor_ = std::make_unique<default_thread_pool>();
 }
 
+orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::state_storage> storage,
+                           std::unique_ptr<core::result_storage> result_storage)
+    : storage_(std::move(storage)),
+      result_storage_(std::move(result_storage)),
+      executor_(std::move(executor)),
+      state_mutex_(std::make_unique<std::mutex>()) {
+  if (!executor_) executor_ = std::make_unique<default_thread_pool>();
+}
+
 void orchestrator::set_audit_log(std::shared_ptr<core::audit_log> log) { audit_log_ = std::move(log); }
 
 void orchestrator::set_event_hooks(integration::workflow_event_hooks hooks) { event_hooks_ = std::move(hooks); }

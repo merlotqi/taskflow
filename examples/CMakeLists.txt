@@ -1,5 +1,69 @@
-add_executable(minimal_orchestrator minimal_orchestrator.cpp)
-target_link_libraries(minimal_orchestrator PRIVATE taskflow)
+add_executable(01_minimal_task 01_minimal_task.cpp)
+target_link_libraries(01_minimal_task PRIVATE taskflow)
 
-add_executable(cancellation_example cancellation_example.cpp)
-target_link_libraries(cancellation_example PRIVATE taskflow)
+add_executable(02_sequential_dag 02_sequential_dag.cpp)
+target_link_libraries(02_sequential_dag PRIVATE taskflow)
+
+add_executable(03_parallel_tasks 03_parallel_tasks.cpp)
+target_link_libraries(03_parallel_tasks PRIVATE taskflow)
+
+add_executable(04_conditional_edges 04_conditional_edges.cpp)
+target_link_libraries(04_conditional_edges PRIVATE taskflow)
+
+add_executable(05_task_context 05_task_context.cpp)
+target_link_libraries(05_task_context PRIVATE taskflow)
+
+add_executable(06_task_results 06_task_results.cpp)
+target_link_libraries(06_task_results PRIVATE taskflow)
+
+add_executable(07_retry_policy 07_retry_policy.cpp)
+target_link_libraries(07_retry_policy PRIVATE taskflow)
+
+add_executable(08_cancellation 08_cancellation.cpp)
+target_link_libraries(08_cancellation PRIVATE taskflow)
+
+add_executable(09_observer_logger 09_observer_logger.cpp)
+target_link_libraries(09_observer_logger PRIVATE taskflow)
+
+add_executable(10_metrics_collection 10_metrics_collection.cpp)
+target_link_libraries(10_metrics_collection PRIVATE taskflow)
+
+add_executable(11_sqlite_persistence 11_sqlite_persistence.cpp)
+target_link_libraries(11_sqlite_persistence PRIVATE taskflow)
+
+add_executable(12_blueprint_serialization 12_blueprint_serialization.cpp)
+target_link_libraries(12_blueprint_serialization PRIVATE taskflow)
+
+add_executable(13_async_execution 13_async_execution.cpp)
+target_link_libraries(13_async_execution PRIVATE taskflow)
+
+add_executable(14_custom_executor 14_custom_executor.cpp)
+target_link_libraries(14_custom_executor PRIVATE taskflow)
+
+add_executable(15_event_hooks 15_event_hooks.cpp)
+target_link_libraries(15_event_hooks PRIVATE taskflow)
+
+add_executable(16_cancellation_example 16_cancellation_example.cpp)
+target_link_libraries(16_cancellation_example PRIVATE taskflow)
+
+add_executable(17_minimal_orchestrator 17_minimal_orchestrator.cpp)
+target_link_libraries(17_minimal_orchestrator PRIVATE taskflow)
+
+add_executable(18_microservice_orchestration 18_microservice_orchestration.cpp)
+target_link_libraries(18_microservice_orchestration PRIVATE taskflow)
+
+add_executable(19_data_pipeline 19_data_pipeline.cpp)
+target_link_libraries(19_data_pipeline PRIVATE taskflow)
+
+add_executable(20_approval_workflow 20_approval_workflow.cpp)
+target_link_libraries(20_approval_workflow PRIVATE taskflow)
+
+add_executable(21_iot_event_processing 21_iot_event_processing.cpp)
+target_link_libraries(21_iot_event_processing PRIVATE taskflow)
+
+if(TASKFLOW_WITH_SQLITE)
+  target_link_libraries(18_microservice_orchestration PRIVATE SQLite::SQLite3)
+  target_link_libraries(19_data_pipeline PRIVATE SQLite::SQLite3)
+  target_link_libraries(20_approval_workflow PRIVATE SQLite::SQLite3)
+  target_link_libraries(21_iot_event_processing PRIVATE SQLite::SQLite3)
+endif()
