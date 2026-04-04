@@ -39,10 +39,15 @@ class workflow_execution {
 
   [[nodiscard]] core::node_state get_node_state(std::size_t node_id) const;
   void set_node_state(std::size_t node_id, core::task_state state);
+  
+  /// Atomic compare-and-swap state transition
+  /// Returns true if state was successfully changed from expected to desired
+  [[nodiscard]] bool try_transition_node_state(std::size_t node_id, core::task_state expected, core::task_state desired);
+  
   void set_node_error(std::size_t node_id, std::string error);
   void increment_retry(std::size_t node_id);
   [[nodiscard]] std::int32_t retry_count(std::size_t node_id) const;
-  /// Unsynchronized view of node states; unsafe under parallel execution. Prefer get_node_state(id).
+  /// Raw map reference without locking; can race with concurrent node updates. Prefer get_node_state(id).
   [[nodiscard]] const std::unordered_map<std::size_t, core::node_state>& node_states() const noexcept;
 
   [[nodiscard]] core::task_ctx& context() noexcept;

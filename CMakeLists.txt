@@ -56,9 +56,11 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(json)
 endif()
 
-option(TASKFLOW_WITH_SQLITE "Build optional SQLite state_storage backend" OFF)
+option(TASKFLOW_WITH_SQLITE "Build optional SQLite state_storage backend" ON)
 if(TASKFLOW_WITH_SQLITE)
-  find_package(SQLite3 REQUIRED)
+  find_package(SQLite3 3.25 REQUIRED)
+  message(STATUS "SQLite3 found: ${SQLite3_VERSION}")
+  message(STATUS "SQLite3 include dir: ${SQLite3_INCLUDE_DIRS}")
 endif()
 
 # Options

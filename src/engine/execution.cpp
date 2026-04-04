@@ -99,6 +99,36 @@ void workflow_execution::set_node_state(std::size_t node_id, core::task_state st
   }
 }
 
+bool workflow_execution::try_transition_node_state(std::size_t node_id, core::task_state expected, core::task_state desired) {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  
+  auto it = node_states_.find(node_id);
+  if (it == node_states_.end()) {
+    return false;
+  }
+  
+  if (it->second.state != expected) {
+    return false;
+  }
+  
+  // State matches expected, perform transition
+  core::task_state old = it->second.state;
+  it->second.state = desired;
+  
+  if (desired == core::task_state::running) {
+    it->second.started_at = std::chrono::system_clock::now();
+  }
+  if (desired == core::task_state::success || desired == core::task_state::failed || desired == core::task_state::skipped) {
+    it->second.finished_at = std::chrono::system_clock::now();
+  }
+  
+  if (audit_log_ && old != desired) {
+    audit_log_->record(exec_id_, node_id, old, desired, "");
+  }
+  
+  return true;
+}
+
 void workflow_execution::set_node_error(std::size_t node_id, std::string error) {
   std::lock_guard<std::mutex> lock(*state_mutex_);
   auto it = node_states_.find(node_id);

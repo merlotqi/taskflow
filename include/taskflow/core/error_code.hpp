@@ -17,6 +17,11 @@ enum class errc : std::uint8_t {
   invalid_blueprint = 6,
   task_type_not_found = 7,
   storage_error = 8,
+  node_already_running = 9,
+  invalid_state_transition = 10,
+  max_retry_exceeded = 11,
+  dependency_failed = 12,
+  operation_not_permitted = 13,
 };
 
 // Error category
@@ -44,6 +49,16 @@ class taskflow_category : public std::error_category {
         return "task type not found";
       case errc::storage_error:
         return "storage error";
+      case errc::node_already_running:
+        return "node is already running";
+      case errc::invalid_state_transition:
+        return "invalid state transition";
+      case errc::max_retry_exceeded:
+        return "maximum retry attempts exceeded";
+      case errc::dependency_failed:
+        return "dependency node failed";
+      case errc::operation_not_permitted:
+        return "operation not permitted";
       default:
         return "unknown error";
     }

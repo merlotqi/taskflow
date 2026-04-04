@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 #include "taskflow/core/cancellation_token.hpp"
+#include "taskflow/core/result.hpp"
 #include "taskflow/engine/result_collector.hpp"
 #include "traits.hpp"
 
@@ -109,13 +110,16 @@ class task_ctx {
   [[nodiscard]] std::chrono::system_clock::time_point exec_start_time() const noexcept;
   void set_exec_start_time(std::chrono::system_clock::time_point t) noexcept;
 
+  /// Sets `exec_start_time` once (first non-default wall time wins). Thread-safe for parallel node starts.
+  void ensure_exec_start_time(std::chrono::system_clock::time_point t);
+
   // Result collection
   void set_collector(engine::result_collector* collector) noexcept;
 
   template <typename T, std::enable_if_t<detail::is_basic_task_value<T>::value, int> = 0>
   void set_result(std::string key, T value) {
     if (collector_) {
-      collector_->set(node_id_, std::move(key), std::move(value));
+      collector_->set(exec_id_, node_id(), std::move(key), std::move(value));
     }
   }
 
@@ -123,19 +127,19 @@ class task_ctx {
             std::enable_if_t<!detail::is_basic_task_value<T>::value && detail::has_to_task_value<T>::value, int> = 0>
   void set_result(std::string key, const T& value) {
     if (collector_) {
-      collector_->set(node_id_, std::move(key), value);
+      collector_->set(exec_id_, node_id(), std::move(key), value);
     }
   }
 
   template <typename T, std::enable_if_t<detail::is_basic_task_value<T>::value, int> = 0>
   [[nodiscard]] std::optional<T> get_result(std::size_t from_node, const std::string& key) const {
-    return collector_ ? collector_->get<T>(from_node, key) : std::nullopt;
+    return collector_ ? collector_->get<T>(result_locator{from_node, key}) : std::nullopt;
   }
 
   template <typename T,
             std::enable_if_t<!detail::is_basic_task_value<T>::value && detail::has_from_task_value<T>::value, int> = 0>
   [[nodiscard]] std::optional<T> get_result(std::size_t from_node, const std::string& key) const {
-    return collector_ ? collector_->get<T>(from_node, key) : std::nullopt;
+    return collector_ ? collector_->get<T>(result_locator{from_node, key}) : std::nullopt;
   }
 
  private:
@@ -148,6 +152,17 @@ class task_ctx {
   std::size_t exec_id_ = 0;
   std::chrono::system_clock::time_point exec_start_time_{};
   engine::result_collector* collector_ = nullptr;
+};
+
+/// RAII: while in scope, the calling thread's `task_ctx::node_id()` resolves to the given node (parallel-safe).
+class task_ctx_invoke_scope {
+  task_ctx* ctx_;
+
+ public:
+  task_ctx_invoke_scope(task_ctx& ctx, std::size_t node_id);
+  ~task_ctx_invoke_scope();
+  task_ctx_invoke_scope(const task_ctx_invoke_scope&) = delete;
+  task_ctx_invoke_scope& operator=(const task_ctx_invoke_scope&) = delete;
 };
 
 }  // namespace taskflow::core

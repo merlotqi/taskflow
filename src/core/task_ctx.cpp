@@ -2,8 +2,15 @@
 
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace taskflow::core {
+
+namespace {
+
+thread_local std::vector<std::pair<task_ctx*, std::size_t>> invoke_stack;
+
+}  // namespace
 
 task_ctx::task_ctx() : data_mutex_(std::make_unique<std::mutex>()) {}
 
@@ -55,7 +62,12 @@ void task_ctx::cancel() { cancelled_.store(true); }
 
 bool task_ctx::is_cancelled() const noexcept { return cancelled_.load(); }
 
-std::size_t task_ctx::node_id() const noexcept { return node_id_; }
+std::size_t task_ctx::node_id() const noexcept {
+  for (auto it = invoke_stack.rbegin(); it != invoke_stack.rend(); ++it) {
+    if (it->first == this) return it->second;
+  }
+  return node_id_;
+}
 
 void task_ctx::set_node_id(std::size_t id) noexcept { node_id_ = id; }
 
@@ -67,10 +79,27 @@ std::chrono::system_clock::time_point task_ctx::exec_start_time() const noexcept
 
 void task_ctx::set_exec_start_time(std::chrono::system_clock::time_point t) noexcept { exec_start_time_ = t; }
 
+void task_ctx::ensure_exec_start_time(std::chrono::system_clock::time_point t) {
+  std::lock_guard<std::mutex> lock(*data_mutex_);
+  if (exec_start_time_ == std::chrono::system_clock::time_point{}) {
+    exec_start_time_ = t;
+  }
+}
+
 void task_ctx::set_collector(engine::result_collector* collector) noexcept { collector_ = collector; }
 
 void task_ctx::set_cancellation_token(cancellation_token token) { cancellation_token_ = std::move(token); }
 
 const cancellation_token& task_ctx::get_cancellation_token() const noexcept { return cancellation_token_; }
+
+task_ctx_invoke_scope::task_ctx_invoke_scope(task_ctx& ctx, std::size_t node_id) : ctx_(&ctx) {
+  invoke_stack.push_back({&ctx, node_id});
+}
+
+task_ctx_invoke_scope::~task_ctx_invoke_scope() {
+  if (!invoke_stack.empty() && invoke_stack.back().first == ctx_) {
+    invoke_stack.pop_back();
+  }
+}
 
 }  // namespace taskflow::core

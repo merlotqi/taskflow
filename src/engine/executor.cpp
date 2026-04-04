@@ -6,6 +6,7 @@
 #include <random>
 #include <thread>
 
+#include "taskflow/core/task_ctx.hpp"
 #include "taskflow/engine/execution.hpp"
 #include "taskflow/engine/registry.hpp"
 #include "taskflow/obs/observer.hpp"
@@ -35,16 +36,20 @@ core::task_state executor::execute_node(workflow_execution& execution, std::size
     return core::task_state::failed;
   }
 
+  if (!execution.try_transition_node_state(node_id, core::task_state::pending, core::task_state::running)) {
+    if (!execution.try_transition_node_state(node_id, core::task_state::retry, core::task_state::running)) {
+      return execution.get_node_state(node_id).state;
+    }
+  }
+
   auto start = std::chrono::system_clock::now();
   for (auto* obs : observers)
     if (obs) obs->on_task_start(execution.id(), node_id, node->task_type, execution.retry_count(node_id) + 1);
 
   auto& ctx = execution.context();
-  ctx.set_node_id(node_id);
-  ctx.set_exec_id(execution.id());
-  if (ctx.exec_start_time() == std::chrono::system_clock::time_point{}) ctx.set_exec_start_time(start);
+  core::task_ctx_invoke_scope invoke_scope(ctx, node_id);
+  ctx.ensure_exec_start_time(start);
 
-  execution.set_node_state(node_id, core::task_state::running);
   core::task_state result = core::task_state::failed;
   try {
     result = task.execute(ctx);
@@ -96,8 +101,9 @@ core::task_state executor::execute_with_retry(workflow_execution& execution, std
   do {
     attempts++;
     if (attempts > 1) {
-      // Set retry state before retrying
-      execution.set_node_state(node_id, core::task_state::retry);
+      if (!execution.try_transition_node_state(node_id, core::task_state::failed, core::task_state::retry)) {
+        return execution.get_node_state(node_id).state;
+      }
       execution.increment_retry(node_id);
 
       std::chrono::milliseconds delay{0};

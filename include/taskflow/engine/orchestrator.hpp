@@ -101,7 +101,9 @@ class orchestrator {
   std::optional<integration::workflow_event_hooks> event_hooks_;
 
   std::atomic<std::size_t> next_exec_id_{0};
+  mutable std::unique_ptr<std::mutex> state_mutex_;
 
+  /// Inserts into `executions_` and optionally persists; caller must hold `state_mutex_`.
   std::size_t create_execution_from_blueprint(const workflow::workflow_blueprint& src);
   std::size_t allocate_exec_id();
 };
