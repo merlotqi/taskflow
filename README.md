@@ -1,215 +1,63 @@
-# TaskFlow
+# TaskFlow (orchestrator branch)
 
-**TaskFlow** is a lightweight, high-performance, and thread-safe C++17 asynchronous task management library. It provides a simple yet powerful API for submitting and managing asynchronous tasks with progress tracking, cancellation, and error handling.
+C++17 **workflow orchestration** library: blueprint (DAG) → runtime execution with a shared `TaskCtx` data bus, optional in-memory persistence, and hooks for observers. This branch (`feature/orchestrator`) replaces the earlier thread-pool `TaskManager` API with `tf::Orchestrator` and related types under `include/taskflow/`.
 
-## 🚀 Key Features
+Design intent aligns with the in-repo notes [`taskcore`](taskcore) and [`doc.md`](doc.md): MQ and SQLite backends are planned extensions; the current MVP ships **memory storage**, **JSON blueprint serialization**, and **synchronous `run_sync`**.
 
-* **Simple API**: Submit tasks as lambda functions or callable objects
-* **Flexible Observability**: Choose between no observation, basic state tracking, or full progress reporting
-* **Cancellation Support**: Tasks can check for cancellation and handle it gracefully
-* **Error Handling**: Comprehensive error reporting and state management
-* **Persistent Tasks**: Reusable tasks that can be reawakened with new parameters
-* **Thread-Safe**: Designed for concurrent access from multiple threads
-* **C++17**: Modern C++ with concepts and constexpr where available
-* **Cross-Platform**: Works on Windows, Linux, and macOS
+## Layout
 
----
+- `include/taskflow/core/` — IDs, `TaskState`, `TaskCtx`, `TaskBase`
+- `include/taskflow/workflow/` — `WorkflowBlueprint`, nodes/edges, serializer
+- `include/taskflow/engine/` — `Orchestrator`, `Scheduler`, `Executor`, `WorkflowExecution`, `TaskRegistry` / `itask_registry`
+- `include/taskflow/storage/` — `StateStorage`, `MemoryStateStorage`
+- `include/taskflow/observer/` — `Observer` callbacks
+- `tests/` — GoogleTest
+- `benchmarks/` — Google Benchmark
+- `examples/minimal_orchestrator.cpp` — smallest runnable demo
 
-## 🏗 Architecture
+Public umbrella header: `#include <taskflow/taskflow.hpp>`.
 
-1. **TaskManager**: The main singleton that manages task submission and execution
-2. **TaskCtx**: Context object passed to tasks for state management and progress reporting
-3. **StateStorage**: Internal storage for task states, progress, and errors
-4. **Thread Pool**: Manages worker threads for task execution
+## Build
 
-Longer design notes, lifecycle, and threading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/README.md](docs/README.md).
-
----
-
-## 💻 Quick Start
-
-### 1. Include the Header
-
-```cpp
-#include <taskflow/task_manager.hpp>
+```bash
+cmake -S . -B build -DTASKFLOW_BUILD_TESTS=ON -DTASKFLOW_BUILD_BENCHMARKS=ON -DTASKFLOW_BUILD_EXAMPLES=ON
+# Optional: -DTASKFLOW_CXX20=ON (whole tree as C++20; see “C++20 (optional)” below)
+cmake --build build -j
+cd build && ctest --output-on-failure
+./minimal_orchestrator
 ```
 
-### 2. Submit a Task
+CMake target: `taskflow`. Aliases: `TaskFlow::taskflow` and `TaskFlow::TaskFlow`.
 
-```cpp
-// Get the task manager instance
-auto& manager = taskflow::TaskManager::getInstance();
+## Dependencies
 
-// Start processing (specify number of threads)
-manager.start_processing(4);
+- Threads
+- [nlohmann/json](https://github.com/nlohmann/json) (fetched automatically via CMake FetchContent if `find_package` does not find it)
+- GoogleTest / Google Benchmark (fetched when tests/benchmarks are enabled)
+- Optional: SQLite 3 when configuring with `-DTASKFLOW_WITH_SQLITE=ON` (enables `taskflow::storage::sqlite_state_storage`)
 
-// Submit a simple task
-auto task_id = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    std::cout << "Task " << ctx.id << " is running" << std::endl;
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    ctx.success();  // Mark as successful
-});
-```
+## Observer and storage
 
-### 3. Monitor Task State
+- `orchestrator::add_observer` stores **raw pointers**; observers must outlive the orchestrator or be removed before destruction.
+- `set_event_hooks` stores `integration::workflow_event_hooks`; during `run_sync` those callbacks are driven through a `obs::hooks_observer` adapter so the engine uses a **single observer list** for per-node execution (see `obs/hooks_observer.hpp`). You can also register a `hooks_observer` yourself if you manage its lifetime.
+- `set_audit_log` records state transitions on `workflow_execution`.
+- `taskflow_version_string()` in `taskflow/capi/taskflow_c.h` is a minimal **C ABI** anchor for future bindings.
 
-```cpp
-// Query task state
-auto state = manager.query_state(task_id);
-if (state) {
-    std::cout << "Task state: " << static_cast<int>(*state) << std::endl;
-}
-```
+## ADL, `task_ctx` values, and threading
 
-### 4. Task with Progress
+- Custom types stored in `task_ctx::set` / `get` need **`to_task_value(const T&) -> std::any`** and **`from_task_value(const std::any&, T&) -> bool`** as **non-member functions in the same namespace as `T`** (ADL). Defining them at global scope while `T` lives in `my_ns` will not be found.
+- Optional explicit ADL entry points: **`taskflow::cpo::adl_to_task_value`** / **`adl_from_task_value`** in `taskflow/core/cpo.hpp` (same lookup rules, single named call site).
+- **`task_ctx::data()`** returns a reference to the internal map **without** taking `data_mutex_`. Concurrent `set`/`get` (which lock) vs iteration or mutation through that reference is a **data race**. Use only on a single thread, or after the run finishes, or stick to `set`/`get`/`contains`.
+- **`workflow_execution::node_states()`** returns the map **without** `state_mutex_`. Concurrent updates from workers vs unsynchronized reads/iteration is unsafe. Prefer **`get_node_state(node_id)`** for a consistent snapshot of one node.
 
-```cpp
-auto progress_task = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    for (int i = 0; i <= 100; i += 25) {
-        ctx.report_progress(static_cast<float>(i) / 100.0f, "Step " + std::to_string(i));
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    ctx.success();
-});
+## Blueprint JSON vs runtime edges
 
-// Monitor progress
-if (auto progress = manager.get_progress(progress_task)) {
-    std::cout << "Progress: " << progress->progress * 100.0f << "% - " << progress->message << std::endl;
-}
-```
+- `serializer::to_json` / `from_json` persist **from** / **to** only. **`edge_def::condition`** is a `std::function` and is **not** serialized; round-tripped blueprints lose conditional routing. Build conditions in code after load, or treat JSON as a **structural** blueprint only.
 
-### 5. Handle Errors
+## C++20 (optional)
 
-```cpp
-auto failing_task = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    try {
-        // Some work that might fail
-        throw std::runtime_error("Something went wrong");
-    } catch (const std::exception& e) {
-        ctx.failure(e.what());
-    }
-});
+- Configure with `-DTASKFLOW_CXX20=ON` to build the whole tree as **C++20**. `task_wrapper` then uses the **`task_callable`** concept from `taskflow/core/task_concepts.hpp` instead of `std::enable_if_t<is_task_v<...>>`. The default remains **C++17**.
 
-// Check for errors
-if (auto error = manager.get_error(failing_task)) {
-    std::cout << "Error: " << *error << std::endl;
-}
-```
+## Note on naming
 
-### 6. Cancellation
-
-```cpp
-auto cancellable_task = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    while (!ctx.is_cancelled()) {
-        // Do work, check for cancellation periodically
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    if (ctx.is_cancelled()) {
-        ctx.failure("Task was cancelled");
-    } else {
-        ctx.success();
-    }
-});
-
-// Cancel the task
-manager.cancel_task(cancellable_task);
-```
-
-### 7. Task Results
-
-Tasks can now store execution results that persist beyond completion:
-
-```cpp
-auto result_task = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    // Process data and create result
-    nlohmann::json result = {
-        {"processed_items", 42},
-        {"success_rate", 0.95},
-        {"output", "processed data"}
-    };
-
-    // Store result with task completion
-    ctx.success_with_result(taskflow::ResultPayload::json(result));
-});
-
-// Retrieve result after completion
-if (auto result = manager.get_result(result_task)) {
-    if (result->kind == taskflow::ResultKind::json) {
-        std::cout << "Result: " << result->data.json_data.dump() << std::endl;
-    }
-}
-```
-
-### 8. Persistent Tasks
-
-Persistent tasks can be reawakened with new parameters after completion:
-
-```cpp
-// Submit a persistent task
-auto persistent_id = manager.submit_task([](taskflow::TaskCtx& ctx) {
-    std::cout << "Initial execution" << std::endl;
-    ctx.success();
-}, taskflow::TaskLifecycle::persistent);
-
-// Check if it's persistent
-if (manager.is_persistent_task(persistent_id)) {
-    // Reawaken with new logic
-    manager.reawaken_task(persistent_id, [](taskflow::TaskCtx& ctx) {
-        std::cout << "Reawakened with new logic!" << std::endl;
-        ctx.success();
-    });
-}
-```
-
----
-
-## 🔧 Task Traits Configuration
-
-Execution and dispatch use `task_traits<TaskType>`. The primary template reads optional capability fields from your task type when present:
-
-- `static constexpr taskflow::TaskObservability observability` — defaults to `basic` if omitted
-- `static constexpr bool cancellable` — defaults to `false` if omitted
-
-You can still **fully specialize** `task_traits<MyTask>` to override name, description, priority, and capabilities in one place.
-
-```cpp
-// Callable type with type-level traits (picked up by default task_traits<T>)
-struct MyProgressTask {
-    static constexpr taskflow::TaskObservability observability = taskflow::TaskObservability::progress;
-    static constexpr bool cancellable = true;
-
-    void operator()(taskflow::TaskCtx& ctx) const { ctx.success(); }
-};
-
-MyProgressTask my_task;
-auto task_id = manager.submit_task(my_task);
-```
-
-### Available Task Capabilities
-
-- **Observability Levels**:
-  - `TaskObservability::none`: Dispatch may match the same path as other tasks; task state in `StateStorage` is still updated for typical executions (use `task_traits` / execution path for exact behavior).
-  - `TaskObservability::basic`: Basic state observation (start/end)
-  - `TaskObservability::progress`: Progress reporting via `TaskCtx::report_progress`
-
-- **Cancellation**: Set `cancellable = true` so the runtime uses the cancellable execution path; if the task returns without setting a terminal state and cancellation was requested, the task is marked failed with message `"cancelled"`.
-
-- **Lifecycle**: Choose between `TaskLifecycle::disposable` and `TaskLifecycle::persistent`
-
----
-
-## ⚙️ Configuration
-
-The TaskManager automatically manages cleanup of completed tasks:
-
-* **Cleanup Interval**: Runs every 30 minutes by default
-* **Max Task Age**: Tasks older than 24 hours are automatically cleaned up
-* **Thread Count**: Specify number of worker threads when calling `start_processing()`
-* **What cleanup removes**: For each expired task id, `cleanup_completed_tasks` drops state/progress/error/locator rows, removes the associated entry from result storage (when a locator was present), clears cancellation flags, and removes persistent task handles so maps stay consistent.
-
-**Manual regression checks** (after changing execution or storage): configure and build with examples enabled (`cmake -S . -B build -DTASKFLOW_BUILD_EXAMPLES=ON`), then run `cmake --build build --target taskflow_run_examples` (runs all examples via CTest), or spot-check `./build/persistent_task` and `./build/task_with_result`. See [examples/README.md](examples/README.md).
-
-## 🛠 Dependencies
-
-* [nlohmann/json](https://github.com/nlohmann/json): For internal data handling
-* **C++17** or higher
+This repository name overlaps the well-known [taskflow](https://github.com/taskflow/taskflow) parallel CPU library; this fork/branch is a **different** product (persistent-style orchestration). Rename the install target or namespace if you publish both.

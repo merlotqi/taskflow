@@ -1,18 +1,17 @@
-# TaskFlow documentation
+# TaskFlow documentation (orchestrator branch)
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — runtime flow, main types, persistence, traits, cleanup, threading.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — orchestrator stack (blueprint, execution, scheduler, storage).
 
 ## API reference
 
-There is no separate generated API site; treat the headers as the contract:
+Headers under `include/taskflow/`:
 
 | Header | Contents |
 |--------|----------|
-| `taskflow/task_manager.hpp` | `TaskManager`, task execution dispatch (`execute`, `execute_*`) |
-| `taskflow/task_ctx.hpp` | `TaskCtx`, `TaskRuntimeCtx` |
-| `taskflow/task_traits.hpp` | Enums, `ResultPayload`, `ResultStorage`, `task_traits`, `is_task_v`, progress rules |
-| `taskflow/state_storage.hpp` | `StateStorage` |
-| `taskflow/any_task.hpp` | `AnyTask`, `make_any_task` |
-| `taskflow/threadpool.hpp` | `ThreadPool` (global class used by `TaskManager`) |
-
-Include `taskflow/task_manager.hpp` for typical applications; it pulls in the rest.
+| `taskflow/taskflow.hpp` | Umbrella include for the public surface |
+| `taskflow/engine/orchestrator.hpp` | `Orchestrator` |
+| `taskflow/workflow/blueprint.hpp` | `WorkflowBlueprint`, `NodeDef`, `EdgeDef` |
+| `taskflow/workflow/serializer.hpp` | JSON blueprint + execution snapshot helpers |
+| `taskflow/core/task.hpp` | `TaskBase`, factories |
+| `taskflow/core/task_ctx.hpp` | `TaskCtx` data bus |
+| `taskflow/storage/memory_storage.hpp` | `MemoryStateStorage` |
