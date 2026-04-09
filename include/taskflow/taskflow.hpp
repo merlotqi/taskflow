@@ -28,7 +28,9 @@
 #include <taskflow/engine/sync_executor.hpp>
 
 // Storage
+#include <taskflow/storage/memory_result_storage.hpp>
 #include <taskflow/storage/memory_state_storage.hpp>
+#include <taskflow/storage/state_storage_factory.hpp>
 #if defined(TASKFLOW_HAS_SQLITE)
 #include <taskflow/storage/sqlite_state_storage.hpp>
 #endif

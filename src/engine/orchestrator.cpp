@@ -15,36 +15,32 @@
 
 namespace taskflow::engine {
 
-orchestrator::orchestrator() 
-  : executor_(std::make_unique<default_thread_pool>()),
-    state_mutex_(std::make_unique<std::mutex>()) {}
+orchestrator::orchestrator()
+    : executor_(std::make_unique<default_thread_pool>()), state_mutex_(std::make_unique<std::mutex>()) {}
 
-orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor) 
-  : executor_(std::move(executor)),
-    state_mutex_(std::make_unique<std::mutex>()) {
+orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor)
+    : executor_(std::move(executor)), state_mutex_(std::make_unique<std::mutex>()) {
   if (!executor_) executor_ = std::make_unique<default_thread_pool>();
 }
 
 orchestrator::orchestrator(std::unique_ptr<core::state_storage> storage)
-    : storage_(std::move(storage)), 
+    : storage_(std::move(storage)),
       executor_(std::make_unique<default_thread_pool>()),
       state_mutex_(std::make_unique<std::mutex>()) {}
 
 orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor, std::unique_ptr<core::state_storage> storage)
-    : storage_(std::move(storage)), 
-      executor_(std::move(executor)),
-      state_mutex_(std::make_unique<std::mutex>()) {
+    : storage_(std::move(storage)), executor_(std::move(executor)), state_mutex_(std::make_unique<std::mutex>()) {
   if (!executor_) executor_ = std::make_unique<default_thread_pool>();
 }
 
 orchestrator::orchestrator(std::unique_ptr<core::result_storage> result_storage)
-    : result_storage_(std::move(result_storage)), 
+    : result_storage_(std::move(result_storage)),
       executor_(std::make_unique<default_thread_pool>()),
       state_mutex_(std::make_unique<std::mutex>()) {}
 
 orchestrator::orchestrator(std::unique_ptr<parallel_executor> executor,
                            std::unique_ptr<core::result_storage> result_storage)
-    : result_storage_(std::move(result_storage)), 
+    : result_storage_(std::move(result_storage)),
       executor_(std::move(executor)),
       state_mutex_(std::make_unique<std::mutex>()) {
   if (!executor_) executor_ = std::make_unique<default_thread_pool>();
@@ -161,6 +157,12 @@ void orchestrator::remove_observer(obs::observer* obs) {
 }
 
 core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_first_failure) {
+  orchestrator_run_options opts;
+  opts.stop_on_first_failure = stop_on_first_failure;
+  return run_sync(execution_id, opts);
+}
+
+core::task_state orchestrator::run_sync(std::size_t execution_id, orchestrator_run_options opts) {
   auto* exec = get_execution(execution_id);
   if (!exec) {
     throw std::system_error(core::make_error_code(core::errc::execution_not_found));
@@ -190,7 +192,7 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
 
   bool failed = false;
   while (true) {
-    if (failed && stop_on_first_failure) break;
+    if (failed && opts.stop_on_first_failure) break;
 
     if (exec->is_cancelled()) break;
 
@@ -225,7 +227,7 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
     }
   }
 
-  if (failed && stop_on_first_failure) {
+  if (failed && opts.stop_on_first_failure) {
     for (const auto& [nid, _] : bp->nodes()) {
       if (exec->get_node_state(nid).state == core::task_state::pending) {
         exec->set_node_state(nid, core::task_state::skipped);
@@ -242,6 +244,39 @@ core::task_state orchestrator::run_sync(std::size_t execution_id, bool stop_on_f
     }
   }
 
+  if (opts.compensate_on_failure || opts.compensate_on_cancel) {
+    bool run_comp = false;
+    if (exec->is_cancelled()) {
+      run_comp = opts.compensate_on_cancel;
+    } else {
+      for (const auto& [_, ns] : exec->node_states()) {
+        if (ns.state == core::task_state::failed) {
+          run_comp = opts.compensate_on_failure;
+          break;
+        }
+      }
+    }
+    if (run_comp) {
+      const bool respect_cancel = !(exec->is_cancelled() && opts.compensate_on_cancel);
+      auto order = exec->forward_success_order_snapshot();
+      for (auto it = order.rbegin(); it != order.rend(); ++it) {
+        std::size_t nid = *it;
+        if (exec->get_node_state(nid).state != core::task_state::success) {
+          continue;
+        }
+        const auto* node = bp->find_node(nid);
+        if (!node || !node->compensate_task_type || node->compensate_task_type->empty()) {
+          continue;
+        }
+        (void)executor::execute_compensation(*exec, nid, registry_, exec_observers, respect_cancel);
+        if (storage_) {
+          storage_->save(execution_id, exec->to_snapshot_json());
+        }
+      }
+    }
+    exec->mark_compensation_phase_complete();
+  }
+
   exec->mark_completed();
   auto overall = exec->overall_state();
   auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(exec->end_time() - exec->start_time());
@@ -255,6 +290,12 @@ std::pair<std::size_t, core::task_state> orchestrator::run_sync_from_blueprint(s
                                                                                bool stop_on_first_failure) {
   auto exec_id = create_execution(blueprint_id);
   return {exec_id, run_sync(exec_id, stop_on_first_failure)};
+}
+
+std::pair<std::size_t, core::task_state> orchestrator::run_sync_from_blueprint(std::size_t blueprint_id,
+                                                                               orchestrator_run_options opts) {
+  auto exec_id = create_execution(blueprint_id);
+  return {exec_id, run_sync(exec_id, opts)};
 }
 
 parallel_executor* orchestrator::executor() noexcept { return executor_.get(); }
@@ -304,10 +345,20 @@ std::future<core::task_state> orchestrator::run_async(std::size_t execution_id, 
   });
 }
 
+std::future<core::task_state> orchestrator::run_async(std::size_t execution_id, orchestrator_run_options opts) {
+  return std::async(std::launch::async, [this, execution_id, opts]() { return run_sync(execution_id, opts); });
+}
+
 std::pair<std::size_t, std::future<core::task_state>> orchestrator::run_async_from_blueprint(
     std::size_t blueprint_id, bool stop_on_first_failure) {
   auto exec_id = create_execution(blueprint_id);
   return {exec_id, run_async(exec_id, stop_on_first_failure)};
+}
+
+std::pair<std::size_t, std::future<core::task_state>> orchestrator::run_async_from_blueprint(
+    std::size_t blueprint_id, orchestrator_run_options opts) {
+  auto exec_id = create_execution(blueprint_id);
+  return {exec_id, run_async(exec_id, opts)};
 }
 
 bool orchestrator::cancel_execution(std::size_t execution_id) {

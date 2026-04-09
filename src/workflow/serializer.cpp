@@ -29,6 +29,19 @@ std::string serializer::to_json(const workflow_blueprint& bp) {
       retry_j["jitter_range_ms"] = node.retry->jitter_range.count();
       node_json["retry"] = std::move(retry_j);
     }
+    if (node.compensate_task_type && !node.compensate_task_type->empty()) {
+      node_json["compensate_task_type"] = *node.compensate_task_type;
+    }
+    if (node.compensate_retry) {
+      json cr;
+      cr["max_attempts"] = node.compensate_retry->max_attempts;
+      cr["initial_delay_ms"] = node.compensate_retry->initial_delay.count();
+      cr["backoff_multiplier"] = node.compensate_retry->backoff_multiplier;
+      cr["max_delay_ms"] = node.compensate_retry->max_delay.count();
+      cr["jitter"] = node.compensate_retry->jitter;
+      cr["jitter_range_ms"] = node.compensate_retry->jitter_range.count();
+      node_json["compensate_retry"] = std::move(cr);
+    }
     if (!node.tags.empty()) {
       node_json["tags"] = node.tags;
     }
@@ -77,6 +90,27 @@ std::optional<workflow_blueprint> serializer::from_json(const std::string& json_
             retry.jitter_range = std::chrono::milliseconds{rj["jitter_range_ms"].get<std::int64_t>()};
           }
           node.retry = retry;
+        }
+        if (node_json.contains("compensate_task_type")) {
+          std::string ct = node_json["compensate_task_type"].get<std::string>();
+          if (!ct.empty()) node.compensate_task_type = std::move(ct);
+        }
+        if (node_json.contains("compensate_retry")) {
+          const auto& crj = node_json["compensate_retry"];
+          core::retry_policy cr;
+          cr.max_attempts = crj["max_attempts"];
+          cr.initial_delay = std::chrono::milliseconds{crj["initial_delay_ms"].get<std::int64_t>()};
+          cr.backoff_multiplier = crj["backoff_multiplier"];
+          if (crj.contains("max_delay_ms")) {
+            cr.max_delay = std::chrono::milliseconds{crj["max_delay_ms"].get<std::int64_t>()};
+          }
+          if (crj.contains("jitter")) {
+            cr.jitter = crj["jitter"].get<bool>();
+          }
+          if (crj.contains("jitter_range_ms")) {
+            cr.jitter_range = std::chrono::milliseconds{crj["jitter_range_ms"].get<std::int64_t>()};
+          }
+          node.compensate_retry = cr;
         }
         if (node_json.contains("tags")) {
           node.tags = node_json["tags"];

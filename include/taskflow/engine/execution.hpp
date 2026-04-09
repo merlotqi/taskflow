@@ -39,11 +39,12 @@ class workflow_execution {
 
   [[nodiscard]] core::node_state get_node_state(std::size_t node_id) const;
   void set_node_state(std::size_t node_id, core::task_state state);
-  
+
   /// Atomic compare-and-swap state transition
   /// Returns true if state was successfully changed from expected to desired
-  [[nodiscard]] bool try_transition_node_state(std::size_t node_id, core::task_state expected, core::task_state desired);
-  
+  [[nodiscard]] bool try_transition_node_state(std::size_t node_id, core::task_state expected,
+                                               core::task_state desired);
+
   void set_node_error(std::size_t node_id, std::string error);
   void increment_retry(std::size_t node_id);
   [[nodiscard]] std::int32_t retry_count(std::size_t node_id) const;
@@ -70,6 +71,13 @@ class workflow_execution {
 
   [[nodiscard]] std::string to_snapshot_json() const;
 
+  /// Record a node that completed forward execution successfully (LIFO compensation order); idempotent per node.
+  void record_forward_success(std::size_t node_id);
+  [[nodiscard]] std::vector<std::size_t> forward_success_order_snapshot() const;
+
+  void mark_compensation_phase_complete();
+  [[nodiscard]] bool compensation_phase_completed() const;
+
   // Cancellation support
   void cancel();
   [[nodiscard]] bool is_cancelled() const noexcept;
@@ -88,6 +96,8 @@ class workflow_execution {
   core::audit_log* audit_log_ = nullptr;
 
   mutable std::unique_ptr<std::mutex> state_mutex_;
+  std::vector<std::size_t> forward_success_order_;
+  bool compensation_phase_completed_ = false;
 
   void init_node_states();
 };

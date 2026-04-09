@@ -23,11 +23,15 @@ static bool incoming_edges_satisfied(const workflow_execution& execution, const 
       continue;
     }
 
-    if (ps.state == core::task_state::success) {
+    if (ps.state == core::task_state::success || ps.state == core::task_state::compensated) {
       if (e.condition && !(*e.condition)(execution.context())) {
         return false;
       }
       continue;
+    }
+
+    if (ps.state == core::task_state::compensation_failed) {
+      return false;
     }
 
     return false;
@@ -66,7 +70,7 @@ bool scheduler::has_pending(const workflow_execution& execution) {
   if (!bp) return false;
   for (const auto& [_, ns] : execution.node_states()) {
     if (ns.state == core::task_state::pending || ns.state == core::task_state::running ||
-        ns.state == core::task_state::retry)
+        ns.state == core::task_state::retry || ns.state == core::task_state::compensating)
       return true;
   }
   return false;
