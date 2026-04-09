@@ -8,8 +8,7 @@
  *    in task_ctx
  *  - Main workflow runs synchronously, separate blueprint runs asynchronously
  *    simulating notification service
- *  - memory_result_storage for result collection; if SQLite is enabled, execution
- *    snapshots are also persisted
+ *  - memory_result_storage for result collection; state snapshots via state_storage_factory (sqlite or memory fallback)
  */
 
 #include <chrono>
@@ -21,10 +20,6 @@
 #include <taskflow/storage/memory_result_storage.hpp>
 #include <taskflow/taskflow.hpp>
 #include <thread>
-
-#if defined(TASKFLOW_HAS_SQLITE)
-#include <taskflow/storage/sqlite_state_storage.hpp>
-#endif
 
 // --- Order validation task: validates order and sets basic info ---
 struct order_validation_task {
@@ -198,19 +193,19 @@ int main() {
   auto results = std::make_unique<taskflow::storage::memory_result_storage>();
   taskflow::storage::memory_result_storage* results_ptr = results.get();
 
-  std::unique_ptr<taskflow::engine::orchestrator> orch_ptr;
-#if defined(TASKFLOW_HAS_SQLITE)
   std::string db_path = "taskflow_ex18_orders.db";
   if (const char* tmp = std::getenv("TMPDIR")) db_path = std::string(tmp) + "/taskflow_ex18_orders.db";
-  auto state = std::make_unique<taskflow::storage::sqlite_state_storage>(db_path);
-  std::cout << "SQLite snapshot: " << db_path << "\n";
-  orch_ptr = std::make_unique<taskflow::engine::orchestrator>(std::make_unique<taskflow::engine::default_thread_pool>(),
-                                                              std::move(state), std::move(results));
-#else
-  std::cout << "SQLite not enabled: using memory_result_storage only.\n";
-  orch_ptr = std::make_unique<taskflow::engine::orchestrator>(std::make_unique<taskflow::engine::default_thread_pool>(),
-                                                              nullptr, std::move(results));
-#endif
+
+  auto sr = taskflow::storage::state_storage_factory::create("sqlite", db_path);
+  if (sr.fell_back_to_memory) {
+    std::cout << "State snapshots: sqlite unavailable, using memory backend.\n";
+  } else {
+    std::cout << "SQLite snapshot: " << db_path << "\n";
+  }
+
+  std::unique_ptr<taskflow::engine::orchestrator> orch_ptr =
+      std::make_unique<taskflow::engine::orchestrator>(std::make_unique<taskflow::engine::default_thread_pool>(),
+                                                       std::move(sr.storage), std::move(results));
 
   taskflow::engine::orchestrator& orch = *orch_ptr;
   register_common_tasks(orch);
@@ -232,12 +227,16 @@ int main() {
   auto [eid_b, st_b] = orch.run_sync_from_blueprint(2);
   std::cout << "Scenario B status: " << taskflow::core::to_string(st_b) << " exec_id=" << eid_b << "\n";
 
-#if defined(TASKFLOW_HAS_SQLITE)
-  taskflow::storage::sqlite_state_storage reader(db_path);
-  std::cout << "\n--- Exec IDs in persistent storage ---\n";
-  for (auto id : reader.list_all()) std::cout << " " << id;
-  std::cout << "\n";
-#endif
+  if (sr.resolved_backend == "sqlite" && !sr.fell_back_to_memory) {
+    auto r2 = taskflow::storage::state_storage_factory::create("sqlite", db_path);
+    if (r2.storage) {
+      std::cout << "\n--- Exec IDs in persistent storage (reopened db) ---\n";
+      for (auto id : r2.storage->list_all()) std::cout << " " << id;
+      std::cout << "\n";
+    }
+  } else {
+    std::cout << "\n--- Skipping file storage listing (memory backend) ---\n";
+  }
 
   std::cout << "\n--- Async notification blueprint ---\n";
   taskflow::workflow::workflow_blueprint notify_bp;

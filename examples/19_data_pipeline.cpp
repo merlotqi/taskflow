@@ -107,7 +107,7 @@ int main() {
 
   // Build DAG:
   //        1 (coord)
-  //     /  |  \
+  //     /  |  \'
   //    2   3   4 (ingest sources)
   //     \  |  /
   //        5 (cleanse) -> 6 (aggregate) -> 7 (sink)
