@@ -6,6 +6,10 @@ endif()
 
 add_library(taskflow ${TASKFLOW_SOURCES})
 
+set_target_properties(taskflow PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+)
+
 add_library(TaskFlow::TaskFlow ALIAS taskflow)
 
 target_include_directories(taskflow PUBLIC

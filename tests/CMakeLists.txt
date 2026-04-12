@@ -15,11 +15,18 @@ enable_testing()
 include(GoogleTest)
 
 file(GLOB_RECURSE TEST_MODULES "*.cpp")
+if(NOT TASKFLOW_WITH_SQLITE)
+  list(FILTER TEST_MODULES EXCLUDE REGEX ".*/sqlite_state_storage_test\\.cpp$")
+endif()
 
 foreach(TEST_SOURCE ${TEST_MODULES})
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
     add_executable(${TEST_NAME} ${TEST_SOURCE})
-    target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main TaskFlow::TaskFlow)
+    if(TEST_SOURCE MATCHES ".*/capi/.*\\.cpp$")
+        target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main TaskFlow::TaskFlowC)
+    else()
+        target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main TaskFlow::TaskFlow)
+    endif()
     set_target_properties(${TEST_NAME} PROPERTIES FOLDER "tests")
     
     gtest_discover_tests(${TEST_NAME}

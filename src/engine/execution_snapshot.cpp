@@ -32,6 +32,12 @@ std::string workflow_execution::to_snapshot_json() const {
     j["completed_keys"].push_back(nlohmann::json::object({{"exec_id", k.exec_id}, {"node_id", k.node_id}}));
   }
 
+  j["compensation_phase_completed"] = compensation_phase_completed_;
+  j["forward_success_order"] = nlohmann::json::array();
+  for (auto nid : forward_success_order_) {
+    j["forward_success_order"].push_back(nid);
+  }
+
   return j.dump();
 }
 

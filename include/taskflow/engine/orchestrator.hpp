@@ -28,6 +28,15 @@ class observer;
 
 namespace taskflow::engine {
 
+/// Options for `run_sync` / `run_async` (beyond the legacy `stop_on_first_failure` flag).
+struct orchestrator_run_options {
+  bool stop_on_first_failure = true;
+  /// After forward phase, run compensate tasks in reverse order of successful nodes (LIFO) when any node failed.
+  bool compensate_on_failure = false;
+  /// When execution was cancelled, run compensation for nodes that had reached `success`.
+  bool compensate_on_cancel = false;
+};
+
 class orchestrator {
  public:
   orchestrator();
@@ -77,19 +86,30 @@ class orchestrator {
   void remove_observer(obs::observer* obs);
 
   [[nodiscard]] core::task_state run_sync(std::size_t execution_id, bool stop_on_first_failure = true);
+  [[nodiscard]] core::task_state run_sync(std::size_t execution_id, orchestrator_run_options opts);
+
   std::pair<std::size_t, core::task_state> run_sync_from_blueprint(std::size_t blueprint_id,
                                                                    bool stop_on_first_failure = true);
+  std::pair<std::size_t, core::task_state> run_sync_from_blueprint(std::size_t blueprint_id,
+                                                                   orchestrator_run_options opts);
 
   // Async execution
   std::future<core::task_state> run_async(std::size_t execution_id, bool stop_on_first_failure = true);
+  std::future<core::task_state> run_async(std::size_t execution_id, orchestrator_run_options opts);
   std::pair<std::size_t, std::future<core::task_state>> run_async_from_blueprint(std::size_t blueprint_id,
                                                                                  bool stop_on_first_failure = true);
+  std::pair<std::size_t, std::future<core::task_state>> run_async_from_blueprint(std::size_t blueprint_id,
+                                                                                 orchestrator_run_options opts);
 
   // Cancellation
   bool cancel_execution(std::size_t execution_id);
 
   [[nodiscard]] parallel_executor* executor() noexcept;
   [[nodiscard]] const parallel_executor* executor() const noexcept;
+
+  /// Non-owning pointer to optional persistence backend (same instance the orchestrator saves to), or null.
+  [[nodiscard]] core::state_storage* state_storage() noexcept { return storage_.get(); }
+  [[nodiscard]] const core::state_storage* state_storage() const noexcept { return storage_.get(); }
 
  private:
   task_registry registry_;

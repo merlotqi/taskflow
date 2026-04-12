@@ -1,0 +1,38 @@
+# TaskFlow — Docker Compose
+#
+# Default image (library installed under /usr/local, runs smoke demo):
+#   docker compose build && docker compose run --rm taskflow
+#
+# Interactive dev shell (builder stage, mount source — run cmake yourself):
+#   docker compose --profile dev run --rm taskflow-dev bash
+
+services:
+  taskflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        CMAKE_BUILD_TYPE: Release
+        TASKFLOW_BUILD_TESTS: "ON"
+        TASKFLOW_BUILD_BENCHMARKS: "OFF"
+        TASKFLOW_BUILD_EXAMPLES: "ON"
+    image: taskflow:local
+    # Override to run another example built in the image (requires rebuilding Dockerfile
+    # to COPY additional binaries) or drop into shell:
+    # command: ["/bin/bash", "-lc", "ls -la /usr/local/lib && /usr/local/bin/taskflow-smoke-demo"]
+
+  # Builder toolchain + source mount for local iteration (no rebuild of image on each edit)
+  taskflow-dev:
+    profiles: [dev]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: taskflow:dev
+    working_dir: /src
+    volumes:
+      - .:/src:rw
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true

@@ -205,4 +205,28 @@ TEST_F(SerializationTest, NodeLabelTagsRetryRoundTrip) {
   EXPECT_EQ(p->retry->jitter_range.count(), 7);
 }
 
+TEST_F(SerializationTest, CompensationFieldsRoundTrip) {
+  taskflow::workflow::node_def n{1, "forward"};
+  n.compensate_task_type = std::string{"undo_forward"};
+  taskflow::core::retry_policy cr;
+  cr.max_attempts = 2;
+  cr.initial_delay = std::chrono::milliseconds{5};
+  cr.backoff_multiplier = 2.0f;
+  n.compensate_retry = cr;
+
+  taskflow::workflow::workflow_blueprint bp;
+  bp.add_node(n);
+  auto json = taskflow::workflow::serializer::to_json(bp);
+  auto out = taskflow::workflow::serializer::from_json(json);
+  ASSERT_TRUE(out.has_value());
+  const auto* p = out->find_node(1);
+  ASSERT_NE(p, nullptr);
+  ASSERT_TRUE(p->compensate_task_type.has_value());
+  EXPECT_EQ(*p->compensate_task_type, "undo_forward");
+  ASSERT_TRUE(p->compensate_retry.has_value());
+  EXPECT_EQ(p->compensate_retry->max_attempts, 2);
+  EXPECT_EQ(p->compensate_retry->initial_delay.count(), 5);
+  EXPECT_FLOAT_EQ(p->compensate_retry->backoff_multiplier, 2.0f);
+}
+
 }  // namespace

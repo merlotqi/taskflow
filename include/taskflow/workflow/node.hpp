@@ -13,6 +13,10 @@ struct node_def {
   std::string task_type;
   std::optional<std::string> label;
   std::optional<core::retry_policy> retry;
+  /// Optional registered task type run on compensation (Saga-style); omitted or empty => no compensation for this node.
+  std::optional<std::string> compensate_task_type;
+  /// Retry policy for the compensation task only; if unset, a single attempt is used.
+  std::optional<core::retry_policy> compensate_retry;
   std::vector<std::string> tags;
 
   node_def() = default;

@@ -60,3 +60,6 @@ target_link_libraries(20_approval_workflow PRIVATE taskflow)
 
 add_executable(21_iot_event_processing 21_iot_event_processing.cpp)
 target_link_libraries(21_iot_event_processing PRIVATE taskflow)
+
+add_executable(22_compensation_saga 22_compensation_saga.cpp)
+target_link_libraries(22_compensation_saga PRIVATE taskflow)

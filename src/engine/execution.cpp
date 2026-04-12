@@ -38,11 +38,16 @@ workflow_execution::workflow_execution(workflow_execution&& o) noexcept
       start_time_(o.start_time_),
       end_time_(o.end_time_),
       audit_log_(o.audit_log_),
-      state_mutex_(std::move(o.state_mutex_)) {
+      state_mutex_(std::move(o.state_mutex_)),
+      forward_success_order_(std::move(o.forward_success_order_)),
+      compensation_phase_completed_(o.compensation_phase_completed_) {
   o.exec_id_ = 0;
   o.start_time_ = std::chrono::system_clock::time_point{};
   o.end_time_ = std::chrono::system_clock::time_point{};
   o.audit_log_ = nullptr;
+  o.compensation_phase_completed_ = false;
+  // ctx_ was moved from `o` and still held collector_ -> &o.results_; repoint to this execution's collector.
+  ctx_.set_collector(&results_);
 }
 
 workflow_execution& workflow_execution::operator=(workflow_execution&& o) noexcept {
@@ -58,10 +63,14 @@ workflow_execution& workflow_execution::operator=(workflow_execution&& o) noexce
   end_time_ = o.end_time_;
   audit_log_ = o.audit_log_;
   state_mutex_ = std::move(o.state_mutex_);
+  forward_success_order_ = std::move(o.forward_success_order_);
+  compensation_phase_completed_ = o.compensation_phase_completed_;
   o.exec_id_ = 0;
   o.start_time_ = std::chrono::system_clock::time_point{};
   o.end_time_ = std::chrono::system_clock::time_point{};
   o.audit_log_ = nullptr;
+  o.compensation_phase_completed_ = false;
+  ctx_.set_collector(&results_);
   return *this;
 }
 
@@ -88,10 +97,12 @@ void workflow_execution::set_node_state(std::size_t node_id, core::task_state st
   auto& ns = node_states_[node_id];
   ns.id = node_id;
   ns.state = state;
-  if (state == core::task_state::running) {
+  if (state == core::task_state::running || state == core::task_state::compensating) {
     ns.started_at = std::chrono::system_clock::now();
   }
-  if (state == core::task_state::success || state == core::task_state::failed || state == core::task_state::skipped) {
+  if (state == core::task_state::success || state == core::task_state::failed || state == core::task_state::skipped ||
+      state == core::task_state::cancelled || state == core::task_state::compensated ||
+      state == core::task_state::compensation_failed) {
     ns.finished_at = std::chrono::system_clock::now();
   }
   if (audit_log_ && old != state) {
@@ -115,10 +126,12 @@ bool workflow_execution::try_transition_node_state(std::size_t node_id, core::ta
   core::task_state old = it->second.state;
   it->second.state = desired;
   
-  if (desired == core::task_state::running) {
+  if (desired == core::task_state::running || desired == core::task_state::compensating) {
     it->second.started_at = std::chrono::system_clock::now();
   }
-  if (desired == core::task_state::success || desired == core::task_state::failed || desired == core::task_state::skipped) {
+  if (desired == core::task_state::success || desired == core::task_state::failed || desired == core::task_state::skipped ||
+      desired == core::task_state::cancelled || desired == core::task_state::compensated ||
+      desired == core::task_state::compensation_failed) {
     it->second.finished_at = std::chrono::system_clock::now();
   }
   
@@ -174,12 +187,14 @@ core::task_state workflow_execution::overall_state() const {
   for (const auto& [_, ns] : node_states_) {
     switch (ns.state) {
       case core::task_state::running:
+      case core::task_state::compensating:
         has_running = true;
         break;
       case core::task_state::pending:
         has_pending = true;
         break;
       case core::task_state::failed:
+      case core::task_state::compensation_failed:
         has_failed = true;
         break;
       case core::task_state::cancelled:
@@ -203,7 +218,8 @@ bool workflow_execution::is_complete() const {
   std::lock_guard<std::mutex> lock(*state_mutex_);
   for (const auto& [_, ns] : node_states_) {
     if (ns.state != core::task_state::success && ns.state != core::task_state::failed &&
-        ns.state != core::task_state::skipped && ns.state != core::task_state::cancelled)
+        ns.state != core::task_state::skipped && ns.state != core::task_state::cancelled &&
+        ns.state != core::task_state::compensated && ns.state != core::task_state::compensation_failed)
       return false;
   }
   return true;
@@ -244,5 +260,28 @@ void workflow_execution::cancel() { cancel_source_.cancel(); }
 bool workflow_execution::is_cancelled() const noexcept { return cancel_source_.is_cancelled(); }
 
 core::cancellation_token workflow_execution::token() const { return cancel_source_.token(); }
+
+void workflow_execution::record_forward_success(std::size_t node_id) {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  if (std::find(forward_success_order_.begin(), forward_success_order_.end(), node_id) != forward_success_order_.end()) {
+    return;
+  }
+  forward_success_order_.push_back(node_id);
+}
+
+std::vector<std::size_t> workflow_execution::forward_success_order_snapshot() const {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  return forward_success_order_;
+}
+
+void workflow_execution::mark_compensation_phase_complete() {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  compensation_phase_completed_ = true;
+}
+
+bool workflow_execution::compensation_phase_completed() const {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  return compensation_phase_completed_;
+}
 
 }  // namespace taskflow::engine

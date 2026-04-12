@@ -58,22 +58,42 @@ endif()
 
 option(TASKFLOW_WITH_SQLITE "Build optional SQLite state_storage backend" ON)
 if(TASKFLOW_WITH_SQLITE)
-  find_package(SQLite3 REQUIRED)
-  message(STATUS "SQLite3 found: ${SQLite3_VERSION}")
-  message(STATUS "SQLite3 include dir: ${SQLite3_INCLUDE_DIRS}")
+  find_package(SQLite3 QUIET)
+  if(NOT SQLite3_FOUND)
+    message(WARNING "SQLite3 not found; disabling TASKFLOW_WITH_SQLITE (install libsqlite3-dev or set TASKFLOW_WITH_SQLITE=OFF)")
+    set(TASKFLOW_WITH_SQLITE OFF CACHE BOOL "Build optional SQLite state_storage backend" FORCE)
+  else()
+    message(STATUS "SQLite3 found: ${SQLite3_VERSION}")
+    message(STATUS "SQLite3 include dir: ${SQLite3_INCLUDE_DIRS}")
+  endif()
 endif()
 
 # Options
 option(TASKFLOW_BUILD_TESTS "Build unit tests" ON)
 option(TASKFLOW_BUILD_BENCHMARKS "Build benchmarks" ON)
 option(TASKFLOW_BUILD_EXAMPLES "Build examples" ON)
+option(TASKFLOW_BUILD_NODE_BINDINGS "Build Node.js bindings" ON)
+option(TASKFLOW_BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 option(TASKFLOW_INSTALL "Generate install target" ON)
 
 # Core library
 add_subdirectory(src)
+add_subdirectory(capi)
+
+if(TASKFLOW_BUILD_NODE_BINDINGS)
+  add_subdirectory(node)
+endif()
+
+if(TASKFLOW_BUILD_PYTHON_BINDINGS)
+  add_subdirectory(Python)
+endif()
 
 # Set version properties
 set_target_properties(taskflow PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+set_target_properties(taskflow_c PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
 )
@@ -98,7 +118,7 @@ if(TASKFLOW_INSTALL)
 
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-  install(TARGETS taskflow
+  install(TARGETS taskflow taskflow_c
     EXPORT TaskFlowTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -162,4 +182,3 @@ set(CPACK_PACKAGE_CONTACT "merlotqi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
 set(CPACK_GENERATOR "TGZ;ZIP")
 include(CPack)
-

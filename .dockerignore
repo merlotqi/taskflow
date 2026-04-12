@@ -1,0 +1,46 @@
+# Build artifacts
+build/
+build-*/
+cmake-build-*/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+
+# VCS / IDE
+.git
+.github
+.vscode
+.cursor
+*.code-workspace
+
+# Docs / misc (keep README for optional reference layers)
+*.md
+!README.md
+
+# Python / local tooling
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage outputs
+Testing/
+coverage/
+*.gcno
+*.gcda
+
+# Packaged artifacts
+*.tar.gz
+*.zip
+*.deb
+*.rpm

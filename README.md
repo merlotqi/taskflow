@@ -34,14 +34,14 @@ CMake target: `taskflow`. Aliases: `TaskFlow::taskflow` and `TaskFlow::TaskFlow`
 - Threads
 - [nlohmann/json](https://github.com/nlohmann/json) (fetched automatically via CMake FetchContent if `find_package` does not find it)
 - GoogleTest / Google Benchmark (fetched when tests/benchmarks are enabled)
-- Optional: SQLite 3 when configuring with `-DTASKFLOW_WITH_SQLITE=ON` (enables `taskflow::storage::sqlite_state_storage`)
+- Optional: SQLite 3 when configuring with `-DTASKFLOW_WITH_SQLITE=ON` (enables `taskflow::storage::sqlite_state_storage`). Use `taskflow::storage::state_storage_factory::create("sqlite", path)` for creation; unknown backends or constructor failures fall back to `memory_state_storage`.
 
 ## Observer and storage
 
 - `orchestrator::add_observer` stores **raw pointers**; observers must outlive the orchestrator or be removed before destruction.
 - `set_event_hooks` stores `integration::workflow_event_hooks`; during `run_sync` those callbacks are driven through a `obs::hooks_observer` adapter so the engine uses a **single observer list** for per-node execution (see `obs/hooks_observer.hpp`). You can also register a `hooks_observer` yourself if you manage its lifetime.
 - `set_audit_log` records state transitions on `workflow_execution`.
-- `taskflow_version_string()` in `taskflow/capi/taskflow_c.h` is a minimal **C ABI** anchor for future bindings.
+- `taskflow/capi/taskflow_c.h` exposes the standalone **C ABI** used by future language bindings.
 
 ## ADL, `task_ctx` values, and threading
 
